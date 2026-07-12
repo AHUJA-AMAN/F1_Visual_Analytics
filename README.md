@@ -2,7 +2,7 @@
 
 An F1 visual analytics web app built for CS661 (Big Data Visual Analytics). The app runs entirely in the browser — no backend server. Data is queried from Parquet files hosted on HuggingFace using DuckDB-WASM (SQL engine compiled to WebAssembly).
 
-**Live site:** (add Vercel URL here once deployed)
+**Live site:** https://cs-661-f1-strat-viz.vercel.app/
 **Data:** https://huggingface.co/datasets/Aman2406/f1-visual-analytics
 **Repo:** https://github.com/DakshSaijwal/CS661-F1-StratViz
 
@@ -50,7 +50,11 @@ Three regions:
    - Click any driver (in standings or on track) to focus — dims others, shows telemetry chart
    - Live standings sidebar updates in real-time during playback
    - Throttle & brake trace chart for focused driver (scrolling canvas)
-   - **Multi-driver comparison panel**: Click "Compare" on any driver to open a floating overlay with Pace Chart, Dynamics Charts, and Metric Scatter tabs for head-to-head analysis
+   - **Multi-driver comparison panel**: Click the small **+/−** button on up to 6 driver rows in the standings to add them to a comparison. A pill appears over the canvas that expands into a floating panel on hover (📌 to pin it open) — the replay keeps running behind it. Three tabs, all filling in live as the sim clock advances:
+     - **Pace** — lap-time sparklines per driver, switchable to approximate sector times (track thirds derived from telemetry, not official timing sectors) or a 5-lap rolling stint-pace average. Pit/anomalous laps render as hollow markers off the line, with a toggle to include them.
+     - **Dynamics** — a position bump chart (P1 on top) plus a gap chart with a switchable baseline (gap to leader, or gap to any compared driver).
+     - **Scatter** — relationship plots (lap time, tyre age, avg/top speed, corner-type speed, position, lap number) with X/Y metric dropdowns, up to 3 side-by-side charts you can add/remove, and hover tooltips showing driver/lap/compound.
+     - Uses the official `laps` table for 2022-2024 races; for 2018-2021 races (telemetry exists but `laps` has no rows) the same stats are derived client-side from telemetry, flagged with an "approx. data" badge, and tyre-age-based metrics are disabled.
    - Auto-plays on load. Shows "Replay unavailable" for races without telemetry data
    - **Pre-2018 races**: Shows a static `TrackView` component (track outline preview) instead of live simulator
    - Data: `telemetry.parquet` (X/Y/speed/throttle/brake, 100 samples/lap) + `circuits.parquet` (track shape)
@@ -69,6 +73,8 @@ Three regions:
 │   ├── index.html                   # HTML entry point
 │   ├── vite.config.js               # Vite config (React + Tailwind plugins)
 │   ├── package.json                 # Dependencies: react, d3, recharts, duckdb-wasm, etc.
+│   ├── vercel.json                  # SPA rewrite (all routes → index.html) so deep links
+│   │                                #   like /race/2023/2023_1 don't 404 on refresh
 │   └── src/
 │       ├── main.jsx                 # React entry — mounts <App /> to #root
 │       ├── App.jsx                  # Router: "/" → LandingPage, "/race/:season/:raceId" → RacePage
@@ -79,7 +85,7 @@ Three regions:
 │       │   │                        #   files from HuggingFace, registers as SQL views.
 │       │   │                        #   Exports: getConnection(), query(sql), queryArrow(sql),
 │       │   │                        #   registerParquet(), registerHttpParquet(), unregisterFile()
-│       │   └── queries.js           # 18 exported async functions — each runs SQL via
+│       │   └── queries.js           # 21 exported async functions — each runs SQL via
 │       │                            #   DuckDB and returns plain JS array of objects.
 │       │                            #   This is the "API" all components call.
 │       │
@@ -157,6 +163,8 @@ Three regions:
 │   │                                #   throttle/brake/t), track status, circuit geometry
 │   ├── fetch_telemetry_colab.ipynb  # Google Colab notebook for fast telemetry download
 │   │                                #   (uses Google datacenter network, ~30-60 min)
+│   ├── upload_telemetry_to_hf.py    # Pushes local telemetry/circuits/track_status parquet
+│   │                                #   to the HuggingFace dataset (run `hf auth login` first)
 │   └── build_parquets.py            # Cleans and exports final .parquet files
 │
 ├── run_pipeline.py                  # Entry point for full pipeline
@@ -192,7 +200,7 @@ No server. No API calls to a backend. SQL runs client-side in WebAssembly.
 
 ## Data Layer API (queries.js)
 
-All functions are async and return plain JS arrays/objects. Import what you need:
+All functions are async and return plain JS arrays/objects (21 total). Import what you need:
 
 ```js
 import { getChampionshipStandings, getRaceLeaderboard } from '../lib/queries';
@@ -224,6 +232,7 @@ const leaderboard = await getRaceLeaderboard(2023, 1);
 | `getStintStrategyData(raceId)` | `"2023_1"` | `[{ stint_id, driver, avg_lap_time, compound, stint_length, tire_age_at_end, starting_position }]` |
 | `getRaceTelemetry(raceId)` | `"2023_1"` | `{ drivers: [{ code, team, n, t, x, y, throttle, brake, speed }], tEnd, nLaps, lapStartT }` (or null) |
 | `getTrackOutline(raceId)` | `"2023_1"` | `{ x: Float32Array, y: Float32Array, rotation: number }` (or null) |
+| `getComparisonLapData(raceId)` | `"2023_1"` | `[{ driver, team, lap_number, position, compound, lap_time_seconds, gap_to_leader_seconds, tire_age_laps, is_pit_lap }]` — all drivers/laps in one call, for the simulator's comparison panel. `[]` for 2018-2021 races (no `laps` rows), which is the fallback-to-derived-stats signal. |
 
 ### Key conventions
 - **`season`** — integer, e.g. `2023`
@@ -238,11 +247,10 @@ const leaderboard = await getRaceLeaderboard(2023, 1);
 
 ## What Needs to Be Built Next
 
-- Upload telemetry.parquet, circuits.parquet, track_status.parquet to HuggingFace (Colab pipeline running)
-- Connect Vercel for auto-deploy
+- Fetch the full 2018-2024 telemetry set (`python pipeline/fetch_telemetry.py --out frontend/public`, ~2-4 hrs) and upload it with `python pipeline/upload_telemetry_to_hf.py` — only 2023 Bahrain (`2023_1`) has real telemetry on HuggingFace right now, so every other 2018-2024 race shows "Replay unavailable" until this runs
 - Leaderboard row click → show driver details (future feature)
 - Add more race info to RacePage header (circuit name, date, country)
-- Safety car / VSC overlays on simulator timeline (data available in track_status.parquet)
+- Safety car / VSC overlays on simulator timeline (data already fetched into `track_status.parquet`, just not queried/rendered yet)
 
 ---
 
