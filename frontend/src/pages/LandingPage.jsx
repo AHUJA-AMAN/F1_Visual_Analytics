@@ -10,6 +10,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const [selectedYear, setSelectedYear] = useState(2024);
   const [windowStart, setWindowStart] = useState(ALL_YEARS.length - WINDOW_SIZE);
+  const [showOverYears, setShowOverYears] = useState(false);
 
   const visibleYears = ALL_YEARS.slice(windowStart, windowStart + WINDOW_SIZE);
 
@@ -36,7 +37,7 @@ export default function LandingPage() {
         <WorldMap races={races} onRaceClick={handleRaceClick} />
       </div>
 
-      {/* Floating year selector */}
+      {/* Floating year selector + Over the Years button */}
       <div className="absolute top-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-[#121822]/90 backdrop-blur-sm border border-[#26303f] rounded-xl px-4 py-3">
         <button
           onClick={handlePrev}
@@ -69,7 +70,61 @@ export default function LandingPage() {
         >
           →
         </button>
+
+        {/* Divider */}
+        <div className="w-px h-6 bg-[#26303f] mx-1" />
+
+        {/* Over the Years button */}
+        <button
+          onClick={() => setShowOverYears(true)}
+          className="px-3 py-1.5 rounded-lg text-sm font-medium border border-[#26303f] text-gray-300 hover:text-white hover:border-[#e10600] hover:bg-[#e10600]/10 transition-all cursor-pointer whitespace-nowrap"
+        >
+          Over the Years
+        </button>
       </div>
+
+      {/* Championship Progress panel (bottom-right) — visible when a year is selected */}
+      <div className="absolute bottom-8 right-6 z-10 w-[420px] h-[280px] bg-[#121822]/90 backdrop-blur-sm border border-[#26303f] rounded-xl overflow-hidden flex flex-col transition-all duration-300 ease-out hover:w-[580px] hover:h-[400px] hover:border-[#e10600]/50 hover:shadow-lg hover:shadow-[#e10600]/10">
+        <div className="px-4 py-3 border-b border-[#26303f] flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white">
+            Championship Progress — {selectedYear}
+          </h3>
+          <span className="text-xs text-gray-500">Season standings</span>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <span className="text-gray-500 text-sm">Championship visualization — placeholder</span>
+        </div>
+      </div>
+
+      {/* "Over the Years" modal popup */}
+      {showOverYears && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowOverYears(false)}
+          />
+          {/* Modal */}
+          <div className="relative w-[80vw] max-w-[900px] h-[70vh] max-h-[600px] bg-[#121822] border border-[#26303f] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-[#26303f] flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Over the Years (2000–2024)</h2>
+              <button
+                onClick={() => setShowOverYears(false)}
+                className="text-gray-400 hover:text-white text-xl leading-none cursor-pointer px-2"
+              >
+                ✕
+              </button>
+            </div>
+            {/* Content placeholder */}
+            <div className="flex-1 flex items-center justify-center p-6">
+              <div className="w-full h-full border-2 border-dashed border-[#26303f] rounded-xl flex items-center justify-center">
+                <span className="text-gray-500 text-sm">Over the Years visualization — placeholder</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hint text */}
       <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-gray-500 text-sm z-10">

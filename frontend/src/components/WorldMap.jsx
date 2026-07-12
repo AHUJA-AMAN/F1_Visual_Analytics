@@ -2,11 +2,9 @@ import React, { useEffect, useRef } from "react";
 import * as d3 from "d3";
 import * as topojson from "topojson-client";
 
-const LENS_RADIUS = 60;
-const LENS_ZOOM = 2.2;
-
 /**
- * WorldMap — D3-based world map with race location pins and magnifying lens.
+ * WorldMap — D3-based world map with race location pins.
+ * Supports pinch-to-zoom and double-click to pan/recenter.
  * Props:
  *   races: [{ race_id, round, race_name, lat, lng }]
  *   onRaceClick: (race) => void
@@ -28,9 +26,31 @@ export default function WorldMap({ races = [], onRaceClick }) {
       .translate([width / 2, height / 2]);
     const path = d3.geoPath(projection);
 
+    // Main group that will be zoomed/panned
     const mapGroup = svg.append("g").attr("id", "mapGroup");
     const landG = mapGroup.append("g").attr("class", "land-layer");
     const dotsG = mapGroup.append("g").attr("class", "dots-layer");
+
+    // Set up zoom behavior (pinch-to-zoom + double-click to pan)
+    const zoom = d3.zoom()
+      .scaleExtent([1, 8])
+      .on("zoom", (event) => {
+        mapGroup.attr("transform", event.transform);
+      });
+
+    svg.call(zoom);
+
+    // Double-click: smooth pan to clicked point (re-center)
+    svg.on("dblclick.zoom", null); // disable default double-click zoom
+    svg.on("dblclick", (event) => {
+      const [mx, my] = d3.pointer(event, svg.node());
+      const currentTransform = d3.zoomTransform(svg.node());
+      const newTransform = currentTransform.translate(
+        width / 2 - mx,
+        height / 2 - my
+      );
+      svg.transition().duration(500).call(zoom.transform, newTransform);
+    });
 
     // Load world topology
     d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
@@ -57,7 +77,10 @@ export default function WorldMap({ races = [], onRaceClick }) {
           .attr("stroke", "#fff")
           .attr("stroke-width", 1)
           .style("cursor", "pointer")
-          .on("click", (_, d) => onRaceClick && onRaceClick(d))
+          .on("click", (event, d) => {
+            event.stopPropagation();
+            onRaceClick && onRaceClick(d);
+          })
           .on("mouseenter", (event, d) => {
             const tooltip = tooltipRef.current;
             if (!tooltip) return;
@@ -74,68 +97,12 @@ export default function WorldMap({ races = [], onRaceClick }) {
           .transition()
           .duration(400)
           .attr("r", 5);
-
-        // Magnifying lens
-        setupLens(svg, width, height);
       })
       .catch((e) => console.warn("World atlas failed to load", e));
   }, [races, onRaceClick]);
 
-  function setupLens(svg) {
-    const defs = svg.append("defs");
-    defs
-      .append("clipPath")
-      .attr("id", "lensClip")
-      .append("circle")
-      .attr("id", "lensCircle")
-      .attr("r", LENS_RADIUS)
-      .attr("cx", -9999)
-      .attr("cy", -9999);
-
-    const lens = svg.append("g").attr("class", "lens").style("display", "none");
-    lens
-      .append("use")
-      .attr("id", "lensContent")
-      .attr("href", "#mapGroup")
-      .attr("clip-path", "url(#lensClip)");
-    // Outer glow ring
-    lens
-      .append("circle")
-      .attr("id", "lensGlow")
-      .attr("r", LENS_RADIUS + 3)
-      .attr("fill", "none")
-      .attr("stroke", "rgba(225, 6, 0, 0.3)")
-      .attr("stroke-width", 4)
-      .style("filter", "blur(3px)");
-
-    // Main ring
-    lens
-      .append("circle")
-      .attr("id", "lensRing")
-      .attr("r", LENS_RADIUS)
-      .attr("fill", "none")
-      .attr("stroke", "#e10600")
-      .attr("stroke-width", 1.5)
-      .style("filter", "drop-shadow(0 4px 12px rgba(0,0,0,0.6))");
-
-    svg.on("mousemove.lens", (event) => {
-      const [mx, my] = d3.pointer(event, svg.node());
-      lens.style("display", null);
-      svg.select("#lensCircle").attr("cx", mx).attr("cy", my);
-      svg.select("#lensRing").attr("cx", mx).attr("cy", my);
-      svg.select("#lensGlow").attr("cx", mx).attr("cy", my);
-      svg
-        .select("#lensContent")
-        .attr(
-          "transform",
-          `translate(${mx},${my}) scale(${LENS_ZOOM}) translate(${-mx},${-my})`
-        );
-    });
-    svg.on("mouseleave.lens", () => lens.style("display", "none"));
-  }
-
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+    <div style={{ position: "relative", width: "100%", height: "100%", touchAction: "none" }}>
       <svg
         ref={svgRef}
         style={{ width: "100%", height: "100%", display: "block" }}
