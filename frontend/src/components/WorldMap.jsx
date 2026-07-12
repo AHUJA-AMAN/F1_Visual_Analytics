@@ -1,6 +1,47 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import * as topojson from "topojson-client";
+
+const CIRCUIT_IMAGE_MAP = {
+  albert_park: "melbourne-1",
+  interlagos: "interlagos-1",
+  imola: "imola-1",
+  silverstone: "silverstone-1",
+  catalunya: "catalunya-1",
+  nurburgring: "nurburgring-1",
+  monaco: "monaco-1",
+  villeneuve: "montreal-1",
+  magny_cours: "magny-cours-1",
+  red_bull_ring: "spielberg-1",
+  hockenheimring: "hockenheimring-1",
+  hungaroring: "hungaroring-1",
+  spa: "spa-francorchamps-1",
+  monza: "monza-1",
+  indianapolis: "indianapolis-1",
+  suzuka: "suzuka-1",
+  sepang: "sepang-1",
+  bahrain: "bahrain-1",
+  shanghai: "shanghai-1",
+  istanbul: "istanbul-1",
+  fuji: "fuji-1",
+  valencia: "valencia-1",
+  marina_bay: "marina-bay-1",
+  yas_marina: "yas-marina-1",
+  yeongam: "yeongam-1",
+  buddh: "buddh-1",
+  americas: "austin-1",
+  sochi: "sochi-1",
+  rodriguez: "mexico-city-1",
+  baku: "baku-1",
+  ricard: "paul-ricard-1",
+  mugello: "mugello-1",
+  portimao: "portimao-1",
+  zandvoort: "zandvoort-1",
+  losail: "lusail-1",
+  jeddah: "jeddah-1",
+  miami: "miami-1",
+  vegas: "las-vegas-1",
+};
 
 /**
  * WorldMap — D3-based world map with race location pins.
@@ -11,7 +52,7 @@ import * as topojson from "topojson-client";
  */
 export default function WorldMap({ races = [], onRaceClick }) {
   const svgRef = useRef(null);
-  const tooltipRef = useRef(null);
+  const [tooltip, setTooltip] = useState(null); // { race, x, y }
 
   useEffect(() => {
     const svg = d3.select(svgRef.current);
@@ -82,24 +123,24 @@ export default function WorldMap({ races = [], onRaceClick }) {
             onRaceClick && onRaceClick(d);
           })
           .on("mouseenter", (event, d) => {
-            const tooltip = tooltipRef.current;
-            if (!tooltip) return;
-            tooltip.textContent = d.race_name;
-            tooltip.style.opacity = "1";
-            const [x, y] = d3.pointer(event, svgRef.current);
-            tooltip.style.left = `${x}px`;
-            tooltip.style.top = `${y - 35}px`;
+            const rect = svgRef.current.getBoundingClientRect();
+            setTooltip({ race: d, x: event.clientX - rect.left, y: event.clientY - rect.top });
           })
-          .on("mouseleave", () => {
-            const tooltip = tooltipRef.current;
-            if (tooltip) tooltip.style.opacity = "0";
+          .on("mousemove", (event) => {
+            const rect = svgRef.current.getBoundingClientRect();
+            setTooltip((prev) => prev ? { ...prev, x: event.clientX - rect.left, y: event.clientY - rect.top } : null);
           })
+          .on("mouseleave", () => setTooltip(null))
           .transition()
           .duration(400)
           .attr("r", 5);
       })
       .catch((e) => console.warn("World atlas failed to load", e));
   }, [races, onRaceClick]);
+
+  const circuitImg = tooltip
+    ? (CIRCUIT_IMAGE_MAP[tooltip.race.circuit_id] ?? tooltip.race.circuit_id + "-1")
+    : null;
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", touchAction: "none" }}>
@@ -108,24 +149,53 @@ export default function WorldMap({ races = [], onRaceClick }) {
         style={{ width: "100%", height: "100%", display: "block" }}
         aria-label="World map of race locations"
       />
-      <div
-        ref={tooltipRef}
-        style={{
-          position: "absolute",
-          pointerEvents: "none",
-          opacity: 0,
-          background: "rgba(10, 14, 20, 0.9)",
-          border: "1px solid #e10600",
-          borderRadius: "6px",
-          padding: "5px 10px",
-          fontSize: "12px",
-          color: "#fff",
-          whiteSpace: "nowrap",
-          transform: "translateX(-50%)",
-          transition: "opacity 0.15s",
-          zIndex: 20,
-        }}
-      />
+      {tooltip && (
+        <div
+          style={{
+            position: "absolute",
+            left: tooltip.x,
+            top: tooltip.y,
+            transform: tooltip.y < 160
+              ? "translate(-50%, 14px)"
+              : "translate(-50%, calc(-100% - 14px))",
+            pointerEvents: "none",
+            background: "rgba(10, 14, 20, 0.95)",
+            border: "1px solid #e10600",
+            borderRadius: "10px",
+            padding: "10px 12px 8px",
+            zIndex: 30,
+            textAlign: "center",
+            minWidth: "160px",
+            boxShadow: "0 4px 20px rgba(225,6,0,0.25)",
+          }}
+        >
+          <img
+            src={`/circuits/white-outline/${circuitImg}.svg`}
+            alt={tooltip.race.race_name}
+            onError={(e) => { e.target.style.display = "none"; }}
+            style={{
+              width: "150px",
+              height: "85px",
+              objectFit: "contain",
+              display: "block",
+              margin: "0 auto",
+              filter: "brightness(0) invert(1)",
+            }}
+          />
+          <div
+            style={{
+              color: "#fff",
+              fontSize: "12px",
+              fontWeight: "600",
+              marginTop: "6px",
+              whiteSpace: "nowrap",
+              letterSpacing: "0.02em",
+            }}
+          >
+            {tooltip.race.race_name}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
