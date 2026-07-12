@@ -1,4 +1,4 @@
-import { query } from "./duckdb.js";
+import { query, queryArrow, registerParquet, registerHttpParquet, unregisterFile } from "./duckdb.js";
 
 // ============================================================
 // SEASON OVERVIEW PAGE
@@ -382,4 +382,155 @@ export async function getRaceLeaderboard(season, round) {
       CASE WHEN finish_position IS NULL THEN 1 ELSE 0 END,
       finish_position
   `);
+}
+
+// ============================================================
+// RACE SIMULATOR (pipeline/fetch_telemetry.py output, 2018-2024 only)
+// ============================================================
+
+const TELEMETRY_BASE =
+  "https://huggingface.co/datasets/Aman2406/f1-visual-analytics/resolve/main/data";
+
+let telemetrySourcePromise = null;
+
+async function ensureTelemetryRegistered() {
+  if (telemetrySourcePromise) return telemetrySourcePromise;
+  telemetrySourcePromise = (async () => {
+    for (const url of ["/telemetry.parquet", `${TELEMETRY_BASE}/telemetry.parquet`]) {
+      const ok = await registerHttpParquet("telemetry.parquet", url);
+      if (!ok) continue;
+      try {
+        await queryArrow(`SELECT 1 FROM read_parquet('telemetry.parquet') LIMIT 1`);
+        return true;
+      } catch {
+        await unregisterFile("telemetry.parquet");
+      }
+    }
+    return false;
+  })();
+  return telemetrySourcePromise;
+}
+
+const telemetryCache = new Map();
+
+/**
+ * Load per-race telemetry for the animated simulator (2018-2024).
+ * Returns null when telemetry isn't available for this race.
+ */
+export async function getRaceTelemetry(raceId) {
+  if (telemetryCache.has(raceId)) return telemetryCache.get(raceId);
+
+  const ready = await ensureTelemetryRegistered();
+  if (!ready) {
+    telemetryCache.set(raceId, null);
+    return null;
+  }
+
+  const [teamRows, table] = await Promise.all([
+    query(`SELECT DISTINCT driver, team FROM laps WHERE race_id = '${raceId}'`),
+    queryArrow(`
+      SELECT driver, lap_number, t, x, y, throttle, brake, speed
+      FROM read_parquet('telemetry.parquet')
+      WHERE race_id = '${raceId}'
+      ORDER BY driver, lap_number, sample_index
+    `),
+  ]);
+
+  const n = table.numRows;
+  if (n === 0) {
+    telemetryCache.set(raceId, null);
+    return null;
+  }
+  const teamByDriver = new Map(teamRows.map((r) => [r.driver, r.team]));
+
+  const drv = table.getChild("driver");
+  const t = table.getChild("t").toArray();
+  const x = table.getChild("x").toArray();
+  const y = table.getChild("y").toArray();
+  const throttle = table.getChild("throttle").toArray();
+  const brake = table.getChild("brake").toArray();
+  const speed = table.getChild("speed").toArray();
+
+  const drivers = [];
+  let start = 0;
+  for (let i = 1; i <= n; i++) {
+    if (i === n || drv.get(i) !== drv.get(start)) {
+      const code = drv.get(start);
+      drivers.push({
+        code,
+        team: teamByDriver.get(code) || "Unknown",
+        n: i - start,
+        t: t.subarray(start, i),
+        x: x.subarray(start, i),
+        y: y.subarray(start, i),
+        throttle: throttle.subarray(start, i),
+        brake: brake.subarray(start, i),
+        speed: speed.subarray(start, i),
+      });
+      start = i;
+    }
+  }
+
+  let tEnd = 0;
+  let nLaps = 0;
+  for (const d of drivers) {
+    if (d.n > 0) tEnd = Math.max(tEnd, d.t[d.n - 1]);
+    nLaps = Math.max(nLaps, Math.round(d.n / 100));
+  }
+
+  const lapStartT = new Float32Array(nLaps + 1);
+  for (let L = 1; L <= nLaps; L++) {
+    const idx = (L - 1) * 100;
+    let best = Infinity;
+    for (const d of drivers) {
+      if (d.n > idx) best = Math.min(best, d.t[idx]);
+    }
+    lapStartT[L] = best === Infinity ? 0 : best;
+  }
+
+  const race = { drivers, tEnd, nLaps, lapStartT };
+  telemetryCache.set(raceId, race);
+  return race;
+}
+
+let outlineTable = null;
+
+/**
+ * Static track outline for a race — the fastest lap's X/Y polyline plus the
+ * circuit's rotation. Returns { x, y, rotation } or null.
+ */
+export async function getTrackOutline(raceId) {
+  if (outlineTable === "unavailable") return null;
+  if (!outlineTable) {
+    const ok = await registerParquet("circuits.parquet", [
+      `/circuits.parquet`,
+      `${TELEMETRY_BASE}/circuits.parquet`,
+    ]);
+    if (!ok) {
+      outlineTable = "unavailable";
+      return null;
+    }
+    outlineTable = {};
+    const tbl = await queryArrow(`
+      SELECT race_id, x, y, rotation FROM read_parquet('circuits.parquet')
+      ORDER BY race_id, point_index
+    `);
+    const rid = tbl.getChild("race_id");
+    const x = tbl.getChild("x").toArray();
+    const y = tbl.getChild("y").toArray();
+    const rot = tbl.getChild("rotation");
+    const nn = tbl.numRows;
+    let s = 0;
+    for (let i = 1; i <= nn; i++) {
+      if (i === nn || rid.get(i) !== rid.get(s)) {
+        outlineTable[rid.get(s)] = {
+          x: x.subarray(s, i),
+          y: y.subarray(s, i),
+          rotation: Number(rot.get(s)) || 0,
+        };
+        s = i;
+      }
+    }
+  }
+  return outlineTable[raceId] || null;
 }

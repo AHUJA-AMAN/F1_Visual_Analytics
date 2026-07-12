@@ -10,3 +10,5 @@ __pycache__/
 .DS_Store
 mock_data/
 test.ipynb
+*.parquet
+frontend/public/*.parquet

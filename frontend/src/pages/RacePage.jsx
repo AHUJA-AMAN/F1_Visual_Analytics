@@ -4,6 +4,7 @@ import { getRaceLeaderboard } from "../lib/queries";
 import PositionChart from "../components/charts/PositionChart";
 import PitStopGantt from "../components/charts/PitStopGantt";
 import ParallelCoordinates from "../components/charts/ParallelCoordinates";
+import RaceSimulator from "../components/simulator/RaceSimulator";
 import LoadingSkeleton from "../components/layout/LoadingSkeleton";
 import raceData from "../constants/raceLocations.json";
 
@@ -96,23 +97,9 @@ export default function RacePage() {
 
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col overflow-y-auto">
-        {/* CENTER — Race Simulator Placeholder */}
-        <div className="flex-1 flex items-center justify-center p-6 min-h-[300px]">
-          <div className="w-full h-full max-w-4xl border-2 border-dashed border-[#26303f] rounded-xl flex flex-col items-center justify-center gap-4">
-            <h3 className="text-xl font-semibold text-gray-400">Race Simulator</h3>
-            <div className="flex items-center gap-4">
-              <button
-                disabled
-                className="w-12 h-12 rounded-full bg-[#1b2431] border border-[#26303f] flex items-center justify-center opacity-50"
-              >
-                <span className="text-gray-500 text-lg">▶</span>
-              </button>
-              <span className="text-gray-500 text-sm">Lap 0 / 57</span>
-            </div>
-            <p className="text-xs text-gray-600 max-w-sm text-center">
-              Animated race replay using real driver lap times — coming soon.
-            </p>
-          </div>
+        {/* CENTER — Race Simulator */}
+        <div className="flex-1 min-h-[400px]">
+          <RaceSimulator raceId={raceId} />
         </div>
 
         {/* BOTTOM — Toggle buttons + panel */}

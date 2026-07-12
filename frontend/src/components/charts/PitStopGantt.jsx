@@ -13,17 +13,17 @@ function tireColor(compound) {
 
 /**
  * PitStopGantt
- * Gantt-style chart of tire stints. Y = drivers, X = lap number.
- * Horizontal bars = tire stints, colored by compound.
- * Shows 5 drivers at a time — click driver name to swap.
+ * Gantt-style chart of tire stints. Y = drivers (sorted by race position),
+ * X = lap number. Drivers move up/down as their position changes during playback.
  * Props: { raceId: string }
  */
 export default function PitStopGantt({ raceId }) {
   const width = 900;
   const rowHeight = 34;
-  const margin = { top: 24, right: 24, bottom: 40, left: 70 };
+  const margin = { top: 24, right: 24, bottom: 40, left: 100 };
 
   const [data, setData] = useState([]);
+  const [positionData, setPositionData] = useState([]);
   const [driverTeams, setDriverTeams] = useState({});
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState(null);
@@ -42,13 +42,24 @@ export default function PitStopGantt({ raceId }) {
       getPositionChartData(raceId),
     ]).then(([stints, laps]) => {
       setData(stints);
-      // Build driver -> team map from laps data
+      setPositionData(laps);
       const teams = {};
       laps.forEach(l => { if (!teams[l.driver]) teams[l.driver] = l.team; });
       setDriverTeams(teams);
       setLoading(false);
     });
   }, [raceId]);
+
+  // Build a lookup: { driver -> { lap -> position } }
+  const positionByDriverLap = useMemo(() => {
+    const map = {};
+    positionData.forEach(row => {
+      const lap = row.lap_number || row.lap;
+      if (!map[row.driver]) map[row.driver] = {};
+      map[row.driver][lap] = row.position;
+    });
+    return map;
+  }, [positionData]);
 
   const { allDrivers, minLap, maxLap, xScale, innerWidth } = useMemo(() => {
     if (!data || data.length === 0) {
@@ -71,13 +82,19 @@ export default function PitStopGantt({ raceId }) {
   const innerHeight = slots.length * rowHeight;
   const height = innerHeight + margin.top + margin.bottom;
 
-  // Reset slots on new data
+  // Reset slots on new data — initial order by first-lap position
   useEffect(() => {
     if (!data || data.length === 0) { setSlots([]); return; }
     const driverList = Array.from(new Set(data.map((d) => d.driver))).sort();
+    // Sort by position at lap 1 if available
+    driverList.sort((a, b) => {
+      const posA = positionByDriverLap[a]?.[1] ?? 999;
+      const posB = positionByDriverLap[b]?.[1] ?? 999;
+      return posA - posB;
+    });
     setSlots(driverList.slice(0, SLOT_COUNT));
     setPicker(null);
-  }, [data]);
+  }, [data, positionByDriverLap]);
 
   useEffect(() => {
     setCurrentLap(maxLap || null);
@@ -134,12 +151,52 @@ export default function PitStopGantt({ raceId }) {
     setPicker(null);
   }, []);
 
+  // Sort slots by position at current lap
+  const sortedSlots = useMemo(() => {
+    const visibleLap = currentLap ?? maxLap;
+    return [...slots].sort((a, b) => {
+      // Find closest lap with position data at or before visibleLap
+      const getPos = (driver) => {
+        const positions = positionByDriverLap[driver];
+        if (!positions) return 999;
+        // Try exact lap first
+        if (positions[visibleLap] != null) return positions[visibleLap];
+        // Fallback: find closest prior lap
+        for (let l = visibleLap; l >= minLap; l--) {
+          if (positions[l] != null) return positions[l];
+        }
+        return 999;
+      };
+      return getPos(a) - getPos(b);
+    });
+  }, [slots, currentLap, maxLap, minLap, positionByDriverLap]);
+
+  // Map each driver to its target Y position for smooth animation
+  const driverYMap = useMemo(() => {
+    const map = {};
+    sortedSlots.forEach((driver, i) => {
+      map[driver] = i * rowHeight;
+    });
+    return map;
+  }, [sortedSlots, rowHeight]);
+
   if (loading) return <LoadingSkeleton height="300px" />;
   if (!data || data.length === 0) {
     return <div className="text-gray-500 text-sm text-center py-8">No stint data available for this race</div>;
   }
 
   const visibleLap = currentLap ?? maxLap;
+
+  // Get position label for a driver at current lap
+  const getPositionLabel = (driver) => {
+    const positions = positionByDriverLap[driver];
+    if (!positions) return "";
+    if (positions[visibleLap] != null) return `P${positions[visibleLap]}`;
+    for (let l = visibleLap; l >= minLap; l--) {
+      if (positions[l] != null) return `P${positions[l]}`;
+    }
+    return "";
+  };
 
   return (
     <div ref={containerRef} className="relative bg-[#0a0a0a] border border-white/10 rounded-lg p-4">
@@ -161,7 +218,7 @@ export default function PitStopGantt({ raceId }) {
         </span>
       </div>
       <p className="text-[11px] text-gray-500 mb-3">
-        Showing {slots.length} of {allDrivers.length} drivers — click a driver's name to swap.
+        Showing {slots.length} of {allDrivers.length} drivers — sorted by race position. Click a name to swap.
       </p>
 
       <svg width={width} height={height} className="overflow-visible max-w-full">
@@ -182,23 +239,38 @@ export default function PitStopGantt({ raceId }) {
           ))}
           <text x={innerWidth / 2} y={innerHeight + 32} textAnchor="middle" fontSize={11} fill="#6b7280">Lap</text>
 
-          {slots.map((driver, i) => {
-            const y = i * rowHeight;
+          {/* Row divider lines (static positions) */}
+          {sortedSlots.map((_, i) => (
+            <line key={`line-${i}`} x1={0} x2={innerWidth} y1={(i + 1) * rowHeight} y2={(i + 1) * rowHeight} stroke="#ffffff" strokeOpacity={0.06} />
+          ))}
+
+          {/* Driver rows — animated Y position */}
+          {slots.map((driver) => {
+            const y = driverYMap[driver] ?? 0;
+            const slotIndex = sortedSlots.indexOf(driver);
             const stints = data.filter((d) => d.driver === driver).sort((a, b) => a.stint_number - b.stint_number);
             const labelColor = getTeamColor(driverTeams[driver]);
+            const posLabel = getPositionLabel(driver);
 
             return (
-              <g key={driver}>
-                <line x1={0} x2={innerWidth} y1={y + rowHeight} y2={y + rowHeight} stroke="#ffffff" strokeOpacity={0.06} />
+              <g key={driver} style={{ transform: `translateY(${y}px)`, transition: "transform 0.35s ease" }}>
+                {/* Position badge */}
                 <text
-                  x={-10} y={y + rowHeight / 2} dy="0.32em" textAnchor="end"
+                  x={-88} y={rowHeight / 2} dy="0.32em" textAnchor="start"
+                  fontSize={9} fontWeight={700} fill="#6b7280"
+                >
+                  {posLabel}
+                </text>
+                {/* Driver name (surname only) */}
+                <text
+                  x={-10} y={rowHeight / 2} dy="0.32em" textAnchor="end"
                   fontSize={11} fontWeight={600} fill={labelColor}
                   style={{ cursor: "pointer" }}
-                  onClick={(e) => { e.stopPropagation(); setPicker({ slotIndex: i, driver, x: margin.left, y: margin.top + y + rowHeight / 2 }); }}
+                  onClick={(e) => { e.stopPropagation(); setPicker({ slotIndex, driver, x: margin.left, y: margin.top + y + rowHeight / 2 }); }}
                   onMouseEnter={(e) => { e.currentTarget.style.textDecoration = "underline"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.textDecoration = "none"; }}
                 >
-                  {driver}
+                  {driver.includes("_") ? driver.split("_").pop() : driver}
                 </text>
 
                 <g clipPath="url(#pitstop-gantt-clip)">
@@ -211,7 +283,7 @@ export default function PitStopGantt({ raceId }) {
                     return (
                       <rect
                         key={stint.stint_number}
-                        x={barX} y={y + 6} width={barW} height={rowHeight - 12} rx={3}
+                        x={barX} y={6} width={barW} height={rowHeight - 12} rx={3}
                         fill={color}
                         stroke={isHovered ? "#ffffff" : "rgba(0,0,0,0.35)"}
                         strokeWidth={isHovered ? 1.5 : 1}
@@ -228,7 +300,7 @@ export default function PitStopGantt({ raceId }) {
                 {(() => {
                   const activeStint = stints.find(s => visibleLap >= s.start_lap && visibleLap <= s.end_lap);
                   if (!activeStint || visibleLap >= maxLap) return null;
-                  return <circle cx={xScale(visibleLap)} cy={y + rowHeight / 2} r={4} fill="#ffffff" stroke="#0a0a0a" strokeWidth={1.5} />;
+                  return <circle cx={xScale(visibleLap)} cy={rowHeight / 2} r={4} fill="#ffffff" stroke="#0a0a0a" strokeWidth={1.5} />;
                 })()}
               </g>
             );

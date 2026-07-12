@@ -43,7 +43,15 @@ Three regions:
 
 1. **Left Panel (Leaderboard)**: Full race classification — position, driver name, team, points, DNF status. Every row is clickable (scaffolded for future driver-detail feature, currently console.log only). Data fetched live via `getRaceLeaderboard()`.
 
-2. **Center (Race Simulator)**: Placeholder area for future animated race replay. Shows disabled play button + lap counter. Do not build simulator logic yet.
+2. **Center (Race Simulator)**: Canvas-based animated race replay using real telemetry data (2018-2024). Features:
+   - Track outline rendered from circuit geometry with proper rotation
+   - All 20 drivers shown as colored dots moving in real-time along the track
+   - Play/pause, restart, lap scrubber, and speed control (1x-30x)
+   - Click any driver (in standings or on track) to focus — dims others, shows telemetry chart
+   - Live standings sidebar updates in real-time during playback
+   - Throttle & brake trace chart for focused driver (scrolling canvas)
+   - Auto-plays on load. Shows "Replay unavailable" for races without telemetry data
+   - Data: `telemetry.parquet` (X/Y/speed/throttle/brake, 100 samples/lap) + `circuits.parquet` (track shape)
 
 3. **Bottom (Toggle Panels)**: Three buttons — only one panel open at a time (full-height, scrollable):
    - **Tire Strategy** — WORKING, `PitStopGantt` Gantt chart with animated playback, driver swap picker, compound-colored bars
@@ -67,8 +75,9 @@ Three regions:
 │       ├── lib/                     # DATA LAYER — the "backend" (runs in browser)
 │       │   ├── duckdb.js            # Initializes DuckDB-WASM singleton, fetches 4 parquet
 │       │   │                        #   files from HuggingFace, registers as SQL views.
-│       │   │                        #   Exports: getConnection(), query(sql)
-│       │   └── queries.js           # 16 exported async functions — each runs SQL via
+│       │   │                        #   Exports: getConnection(), query(sql), queryArrow(sql),
+│       │   │                        #   registerParquet(), registerHttpParquet(), unregisterFile()
+│       │   └── queries.js           # 18 exported async functions — each runs SQL via
 │       │                            #   DuckDB and returns plain JS array of objects.
 │       │                            #   This is the "API" all components call.
 │       │
@@ -92,6 +101,16 @@ Three regions:
 │       │   │   └── ParallelCoordinates.jsx # D3 parallel coordinates for stint strategy
 │       │   │                              #   (brushable axes, compound-colored lines)
 │       │   │                              #   Self-contained: fetches via getStintStrategyData()
+│       │   │
+│       │   │
+│       │   ├── simulator/           # RACE SIMULATOR
+│       │   │   ├── RaceSimulator.jsx    # Canvas-based animated race replay (20 drivers,
+│       │   │   │                        #   track + cars, live standings, focus mode)
+│       │   │   │                        #   Self-contained: fetches via getRaceTelemetry()
+│       │   │   ├── TelemetryChart.jsx   # Scrolling throttle/brake canvas trace for
+│       │   │   │                        #   focused driver (synced to sim clock via ref)
+│       │   │   └── raceEngine.js        # Pure math: interpolation, standings, projection.
+│       │   │                            #   No React — used by RaceSimulator + TelemetryChart
 │       │   │
 │       │   └── layout/              # SHARED UI COMPONENTS
 │       │       ├── Navbar.jsx           # Top nav (currently unused in 2-page layout)
@@ -118,8 +137,10 @@ Three regions:
 ├── pipeline/                        # DATA PIPELINE (Python, run separately, not needed for frontend)
 │   ├── fetch_jolpica.py             # Fetches from Jolpica API (Ergast replacement), 2000-2024
 │   ├── fetch_fastf1.py              # Fetches lap telemetry via FastF1 library, 2018-2024
-│   ├── fetch_telemetry.py           # Fetches race replay data: telemetry (X/Y/speed),
-│   │                                #   track status (SC/VSC), circuit geometry. 2018-2024
+│   ├── fetch_telemetry.py           # Fetches race replay data: telemetry (X/Y/speed/
+│   │                                #   throttle/brake/t), track status, circuit geometry
+│   ├── fetch_telemetry_colab.ipynb  # Google Colab notebook for fast telemetry download
+│   │                                #   (uses Google datacenter network, ~30-60 min)
 │   └── build_parquets.py            # Cleans and exports final .parquet files
 │
 ├── run_pipeline.py                  # Entry point for full pipeline
@@ -138,13 +159,15 @@ User's Browser
     ├── React Pages (LandingPage, RacePage)
     │       │
     │       ▼
-    ├── queries.js  ← "API layer" — 16 async functions returning JS arrays
+    ├── queries.js  ← "API layer" — 18 async functions returning JS arrays
     │       │
     │       ▼
     ├── duckdb.js   ← DuckDB-WASM (full SQL engine running in browser)
     │       │
     │       ▼
-    └── Fetches 4 .parquet files from HuggingFace on first load (~3MB total)
+    └── Fetches 4 core .parquet files on first load (~3MB total)
+        + lazy-loads telemetry.parquet & circuits.parquet via HTTP range requests
+          (only fetches the byte ranges needed for the viewed race)
 ```
 
 No server. No API calls to a backend. SQL runs client-side in WebAssembly.
@@ -183,6 +206,8 @@ const leaderboard = await getRaceLeaderboard(2023, 1);
 | `getTeamList(season)` | `2023` | `[{ constructor }]` |
 | `getRaceLeaderboard(season, round)` | `2023, 1` | `[{ position, driver, team, points, status }]` |
 | `getStintStrategyData(raceId)` | `"2023_1"` | `[{ stint_id, driver, avg_lap_time, compound, stint_length, tire_age_at_end, starting_position }]` |
+| `getRaceTelemetry(raceId)` | `"2023_1"` | `{ drivers: [{ code, team, n, t, x, y, throttle, brake, speed }], tEnd, nLaps, lapStartT }` (or null) |
+| `getTrackOutline(raceId)` | `"2023_1"` | `{ x: Float32Array, y: Float32Array, rotation: number }` (or null) |
 
 ### Key conventions
 - **`season`** — integer, e.g. `2023`
@@ -197,20 +222,11 @@ const leaderboard = await getRaceLeaderboard(2023, 1);
 
 ## What Needs to Be Built Next
 
-### Charts needed (in `src/components/charts/`)
-
-1. **Race Simulator** (center of RacePage)
-   - Animated replay of all laps using real driver lap times
-   - Data: `telemetry.parquet` (X/Y positions, 100 samples/lap) + `circuits.parquet` (track shape)
-   - Additional context: `track_status.parquet` (safety car / VSC overlays)
-   - Play/pause/scrub controls, lap counter
-   - This is the main feature of Page 2
-
-### Other tasks
+- Upload telemetry.parquet, circuits.parquet, track_status.parquet to HuggingFace (Colab pipeline running)
 - Connect Vercel for auto-deploy
 - Leaderboard row click → show driver details (future feature)
 - Add more race info to RacePage header (circuit name, date, country)
-- Upload telemetry.parquet, track_status.parquet, circuits.parquet to HuggingFace
+- Safety car / VSC overlays on simulator timeline (data available in track_status.parquet)
 
 ---
 
@@ -254,7 +270,7 @@ export default function YourChart({ raceId }) {
 | results.parquet | 10,071 | 2000-2024 | Jolpica API | season, round, race_name, circuit_name, country, date, driver, constructor, grid_position, finish_position, points, status, fastest_lap_rank, num_pit_stops, avg_pit_stop_duration_ms |
 | laps.parquet | 161,794 | 2018-2024 | FastF1 | race_id, season, round, driver, team, lap_number, lap_time_seconds, position, compound, tire_age_laps, pit_in_flag, pit_out_flag, gap_to_leader_seconds, sector1_time, sector2_time, sector3_time |
 | stints.parquet | 7,101 | 2018-2024 | Derived | race_id, driver, stint_number, compound, start_lap, end_lap, stint_length |
-| telemetry.parquet | ~20M | 2018-2024 | FastF1 | race_id, driver, lap_number, sample_index, x, y, distance, speed (100 pts/lap) |
+| telemetry.parquet | ~20M | 2018-2024 | FastF1 | race_id, driver, lap_number, sample_index, x, y, distance, speed, throttle, brake, t (100 pts/lap, sorted by race_id for HTTP range reads) |
 | track_status.parquet | ~3,000 | 2018-2024 | FastF1 | race_id, time_seconds, status_code, status (Green/SafetyCar/VSC/Red) |
 | circuits.parquet | ~30,000 | 2018-2024 | FastF1 | race_id, circuit_name, rotation, point_index, x, y, distance (200 pts/circuit) |
 
