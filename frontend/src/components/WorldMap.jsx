@@ -104,7 +104,21 @@ export default function WorldMap({ races = [], onRaceClick }) {
           .attr("d", path)
           .attr("fill", "#1b2431")
           .attr("stroke", "#2f3b4d")
-          .attr("stroke-width", 0.5);
+          .attr("stroke-width", 0.5)
+          .style("transition", "fill 0.25s ease, stroke 0.25s ease")
+          .style("cursor", "default")
+          .on("mouseenter", function () {
+            d3.select(this)
+              .attr("fill", "#2a1a1e")
+              .attr("stroke", "#e10600")
+              .attr("stroke-width", 0.8);
+          })
+          .on("mouseleave", function () {
+            d3.select(this)
+              .attr("fill", "#1b2431")
+              .attr("stroke", "#2f3b4d")
+              .attr("stroke-width", 0.5);
+          });
 
         // Race dots
         dotsG

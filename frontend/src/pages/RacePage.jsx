@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getChampionshipStandings, getRaceLeaderboard } from "../lib/queries";
-import ChampionshipChart from "../components/charts/ChampionshipChart";
+import { getRaceLeaderboard } from "../lib/queries";
 import PositionChart from "../components/charts/PositionChart";
 import PitStopGantt from "../components/charts/PitStopGantt";
 import ParallelCoordinates from "../components/charts/ParallelCoordinates";
@@ -26,8 +25,6 @@ export default function RacePage() {
   // Leaderboard placeholder data (will be replaced with real query)
   const [leaderboard, setLeaderboard] = useState([]);
   const [activeToggle, setActiveToggle] = useState(null);
-  const [chartData, setChartData] = useState([]);
-  const [chartLoading, setChartLoading] = useState(false);
 
   // Fetch real leaderboard from HF via DuckDB
   const [leaderboardLoading, setLeaderboardLoading] = useState(true);
@@ -39,17 +36,6 @@ export default function RacePage() {
       setLeaderboardLoading(false);
     });
   }, [raceId, seasonNum]);
-
-  // Load championship chart data when that toggle is active
-  useEffect(() => {
-    if (activeToggle === "championship") {
-      setChartLoading(true);
-      getChampionshipStandings(seasonNum).then((d) => {
-        setChartData(d);
-        setChartLoading(false);
-      });
-    }
-  }, [activeToggle, seasonNum]);
 
   function formatDriverName(driver) {
     return driver
@@ -109,7 +95,7 @@ export default function RacePage() {
       </aside>
 
       {/* MAIN CONTENT */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-y-auto">
         {/* CENTER — Race Simulator Placeholder */}
         <div className="flex-1 flex items-center justify-center p-6 min-h-[300px]">
           <div className="w-full h-full max-w-4xl border-2 border-dashed border-[#26303f] rounded-xl flex flex-col items-center justify-center gap-4">
@@ -137,7 +123,6 @@ export default function RacePage() {
               { id: "tire", label: "Tire Strategy" },
               { id: "position", label: "Lap-by-Lap Position" },
               { id: "strategy", label: "Strategic Archetypes" },
-              { id: "championship", label: "Championship Standings" },
             ].map(({ id, label }) => (
               <button
                 key={id}
@@ -155,7 +140,7 @@ export default function RacePage() {
 
           {/* Toggle panel content */}
           {activeToggle && (
-            <div className="px-6 py-4 bg-[#0a0e14] max-h-[85vh] overflow-y-auto">
+            <div className="px-6 py-4 bg-[#0a0e14]">
               {activeToggle === "tire" && (
                 <PitStopGantt raceId={raceId} />
               )}
@@ -164,13 +149,6 @@ export default function RacePage() {
               )}
               {activeToggle === "strategy" && (
                 <ParallelCoordinates raceId={raceId} />
-              )}
-              {activeToggle === "championship" && (
-                chartLoading ? (
-                  <LoadingSkeleton height="350px" />
-                ) : (
-                  <ChampionshipChart data={chartData} />
-                )
               )}
             </div>
           )}

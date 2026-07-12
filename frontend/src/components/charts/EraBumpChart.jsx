@@ -1,26 +1,31 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { getTeamColor } from "../../constants/f1Colors";
 
-/**
- * EraBumpChart
- * Historical progression of end-of-season championship rank, 2000-2024.
- * Toggles between driver-level and constructor-level rank, with a
- * multi-select focus+context filter.
- *
- * Props: { data: [{ season, driver, team, position }] }
- */
+const WINDOW = 7; // show 7 seasons at a time in the scrollbar
+
 export default function EraBumpChart({ data, constructorData = null }) {
   const [viewMode, setViewMode] = useState("drivers");
   const [selected, setSelected] = useState(new Set());
   const [search, setSearch] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
 
   const seasons = useMemo(() => {
     return Array.from(new Set(data.map((d) => d.season))).sort((a, b) => a - b);
   }, [data]);
+
+  // Season window for horizontal scroll
+  const [windowStart, setWindowStart] = useState(Math.max(0, seasons.length - WINDOW));
+
+  // Update windowStart when seasons change
+  useEffect(() => {
+    setWindowStart(Math.max(0, seasons.length - WINDOW));
+  }, [seasons]);
+
+  const visibleSeasons = seasons.slice(windowStart, windowStart + WINDOW);
 
   const driverLatestTeam = useMemo(() => {
     const map = new Map();
@@ -64,19 +69,35 @@ export default function EraBumpChart({ data, constructorData = null }) {
     [activeRows, entityField]
   );
 
+  // Filter data to only visible seasons
   const pivoted = useMemo(() => {
+    const visibleSet = new Set(visibleSeasons);
     const bySeason = new Map();
-    for (const season of seasons) bySeason.set(season, { season });
+    for (const season of visibleSeasons) bySeason.set(season, { season });
     for (const row of activeRows) {
-      bySeason.get(row.season)[row[entityField]] = row.position;
+      if (visibleSet.has(row.season)) {
+        bySeason.get(row.season)[row[entityField]] = row.position;
+      }
     }
     return Array.from(bySeason.values());
-  }, [activeRows, seasons, entityField]);
+  }, [activeRows, visibleSeasons, entityField]);
 
   const maxPosition = useMemo(
     () => Math.max(...activeRows.map((r) => r.position), 10),
     [activeRows]
   );
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    function handleClick(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [dropdownOpen]);
 
   function toggleEntity(entity) {
     setSelected((prev) => {
@@ -144,7 +165,7 @@ export default function EraBumpChart({ data, constructorData = null }) {
           </div>
 
           {/* Multi-select filter dropdown */}
-          <div className="relative">
+          <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setDropdownOpen((o) => !o)}
               className="px-3 py-1.5 text-xs font-medium rounded-md border border-zinc-800 bg-[#0a0a0a] text-gray-300 hover:text-white hover:border-zinc-700 transition-colors cursor-pointer"
@@ -202,49 +223,75 @@ export default function EraBumpChart({ data, constructorData = null }) {
         </div>
       </div>
 
-      <ResponsiveContainer width="100%" height={440}>
-        <LineChart data={pivoted} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-800" />
-          <XAxis
-            dataKey="season"
-            type="number"
-            domain={[seasons[0], seasons[seasons.length - 1]]}
-            ticks={seasons}
-            stroke="#71717a"
-            tick={{ fill: "#a1a1aa", fontSize: 11 }}
-            label={{ value: "Season", position: "insideBottom", offset: -3, fill: "#71717a" }}
+      {/* Chart — only render lines when entities are selected */}
+      {hasSelection ? (
+        <ResponsiveContainer width="100%" height={440}>
+          <LineChart data={pivoted} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-800" />
+            <XAxis
+              dataKey="season"
+              type="number"
+              domain={[visibleSeasons[0], visibleSeasons[visibleSeasons.length - 1]]}
+              ticks={visibleSeasons}
+              stroke="#71717a"
+              tick={{ fill: "#a1a1aa", fontSize: 11 }}
+              label={{ value: "Season", position: "insideBottom", offset: -3, fill: "#71717a" }}
+            />
+            <YAxis
+              reversed
+              type="number"
+              domain={[1, maxPosition]}
+              allowDecimals={false}
+              stroke="#71717a"
+              tick={{ fill: "#a1a1aa", fontSize: 11 }}
+              label={{ value: "Championship Position", angle: -90, position: "insideLeft", fill: "#71717a" }}
+            />
+            <Tooltip content={<BumpTooltip formatLabel={formatLabel} />} />
+            {entities.map((entity) => {
+              if (!selected.has(entity)) return null;
+              const color = entityColor(entity);
+              return (
+                <Line
+                  key={entity}
+                  type="linear"
+                  dataKey={entity}
+                  name={entity}
+                  stroke={color}
+                  strokeWidth={2.5}
+                  strokeOpacity={1}
+                  dot={{ r: 3, fill: color, strokeWidth: 0 }}
+                  activeDot={{ r: 5 }}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+              );
+            })}
+          </LineChart>
+        </ResponsiveContainer>
+      ) : (
+        <div className="flex items-center justify-center h-[440px] border border-dashed border-zinc-800 rounded-lg">
+          <span className="text-gray-500 text-sm">Select entities above to display the chart</span>
+        </div>
+      )}
+
+      {/* Season range slider */}
+      <div className="mt-3 pt-3 border-t border-zinc-800">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500 w-10 text-right">{seasons[0]}</span>
+          <input
+            type="range"
+            min={0}
+            max={seasons.length - WINDOW}
+            value={windowStart}
+            onChange={(e) => setWindowStart(Number(e.target.value))}
+            className="flex-1 accent-[#e10600] cursor-pointer h-2"
           />
-          <YAxis
-            reversed
-            type="number"
-            domain={[1, maxPosition]}
-            allowDecimals={false}
-            stroke="#71717a"
-            tick={{ fill: "#a1a1aa", fontSize: 11 }}
-            label={{ value: "Championship Position", angle: -90, position: "insideLeft", fill: "#71717a" }}
-          />
-          <Tooltip content={<BumpTooltip formatLabel={formatLabel} />} />
-          {entities.map((entity) => {
-            const isSelected = !hasSelection || selected.has(entity);
-            const color = hasSelection && !selected.has(entity) ? "#3f3f46" : entityColor(entity);
-            return (
-              <Line
-                key={entity}
-                type="linear"
-                dataKey={entity}
-                name={entity}
-                stroke={color}
-                strokeWidth={isSelected ? 2.5 : 1}
-                strokeOpacity={isSelected ? 1 : 0.15}
-                dot={isSelected ? { r: 3, fill: color, strokeWidth: 0 } : false}
-                activeDot={isSelected ? { r: 5 } : false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-            );
-          })}
-        </LineChart>
-      </ResponsiveContainer>
+          <span className="text-xs text-gray-500 w-10">{seasons[seasons.length - 1]}</span>
+        </div>
+        <p className="text-[10px] text-gray-500 text-center mt-1">
+          Showing {visibleSeasons[0]}–{visibleSeasons[visibleSeasons.length - 1]} · Drag to change range
+        </p>
+      </div>
     </div>
   );
 }

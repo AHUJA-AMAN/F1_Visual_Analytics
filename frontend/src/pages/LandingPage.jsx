@@ -123,14 +123,24 @@ export default function LandingPage() {
       </div>
 
       {/* Championship Progress panel (bottom-right) */}
-      <div className="absolute bottom-8 right-6 z-10 w-[420px] h-[280px] bg-[#121822]/90 backdrop-blur-sm border border-[#26303f] rounded-xl overflow-hidden flex flex-col transition-all duration-300 ease-out hover:w-[580px] hover:h-[400px] hover:border-[#e10600]/50 hover:shadow-lg hover:shadow-[#e10600]/10">
-        <div className="flex-1 overflow-hidden">
+      <div className="group absolute bottom-8 right-6 z-10 w-[280px] h-[160px] bg-[#121822]/90 backdrop-blur-sm border border-[#26303f] rounded-xl overflow-hidden flex flex-col transition-all duration-300 ease-out hover:w-[620px] hover:h-[500px] hover:border-[#e10600]/50 hover:shadow-lg hover:shadow-[#e10600]/10">
+        {/* Collapsed state — title card */}
+        <div className="flex flex-col items-center justify-center h-full gap-3 group-hover:hidden transition-opacity">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e10600" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          <span className="text-white text-sm font-semibold tracking-wide">Championship Progress</span>
+          <span className="text-gray-500 text-xs">{selectedYear} Season</span>
+          <span className="text-gray-600 text-[10px]">Hover to expand</span>
+        </div>
+        {/* Expanded state — actual chart */}
+        <div className="hidden group-hover:flex flex-1 overflow-hidden">
           {champLoading ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex items-center justify-center w-full h-full">
               <LoadingSkeleton height="100%" />
             </div>
           ) : (
-            <div className="w-full h-full [&_.bg-\\[\\#111111\\]]:bg-transparent [&_.border-zinc-800]:border-transparent [&_h3]:hidden">
+            <div className="w-full h-full [&_.bg-\\[\\#111111\\]]:bg-transparent [&_.border-zinc-800]:border-transparent">
               <ChampionshipChart data={champData} />
             </div>
           )}
@@ -146,7 +156,7 @@ export default function LandingPage() {
             onClick={() => setShowOverYears(false)}
           />
           {/* Modal */}
-          <div className="relative w-[90vw] max-w-[1000px] h-[80vh] max-h-[700px] bg-[#121822] border border-[#26303f] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+          <div className="relative w-[92vw] max-w-[1100px] h-[90vh] max-h-[850px] bg-[#121822] border border-[#26303f] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             {/* Header */}
             <div className="px-6 py-4 border-b border-[#26303f] flex items-center justify-between">
               <h2 className="text-lg font-bold text-white">Over the Years (2000–2024)</h2>

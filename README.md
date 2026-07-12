@@ -29,10 +29,12 @@ Open http://localhost:5173 in your browser. That's it — data is fetched from H
 Full-screen interactive D3 world map showing race circuit locations as red pins.
 
 - **Year selector** (fixed floating bar at top): Shows 7 years at a time from 2000-2024, arrows to scroll. Clicking a year loads that season's race pins on the map.
-- **"Over the Years" button**: In the top bar. Opens a modal with `EraBumpChart` — historical end-of-season championship rank (2000-2024). Toggle between drivers/constructors view, multi-select filter with search. Data fetched via `getEraStandings()`.
+- **"Over the Years" button**: In the top bar. Opens a large modal with `EraBumpChart` — historical end-of-season championship rank (2000-2024). Toggle between drivers/constructors view, multi-select filter with search, season range slider (7 years at a time). Chart only appears after selecting entities. Data fetched via `getEraStandings()`.
 - **Zoom & Pan**: Pinch-to-zoom (trackpad/touch) + scroll wheel zoom. Double-click to re-center on a point.
-- **Race pins**: Hovering shows race name tooltip. Clicking navigates to Page 2.
-- **Championship Progress panel** (fixed, bottom-right): WORKING — `ChampionshipChart` showing cumulative points per driver across rounds for the selected year. Expands on hover. Data fetched via `getChampionshipStandings(season)`.
+- **Country hover effect**: Countries highlight with a warm crimson tint + red border on hover, matching the F1 theme.
+- **Race pins**: Hovering shows circuit outline image + race name tooltip. Clicking navigates to Page 2.
+- **Splash screen**: Animated intro on first visit (once per session).
+- **Championship Progress panel** (fixed, bottom-right): Shows a collapsed title card by default. On hover, expands to reveal the full `ChampionshipChart` with cumulative points per driver across rounds. Data fetched via `getChampionshipStandings(season)`.
 - **Data source**: `src/constants/raceLocations.json` (static, 38 circuits with lat/lng coordinates).
 
 ### Page 2 — `/race/:season/:raceId` — Race Detail
@@ -43,11 +45,10 @@ Three regions:
 
 2. **Center (Race Simulator)**: Placeholder area for future animated race replay. Shows disabled play button + lap counter. Do not build simulator logic yet.
 
-3. **Bottom (Toggle Panels)**: Four buttons — only one panel open at a time:
+3. **Bottom (Toggle Panels)**: Three buttons — only one panel open at a time (full-height, scrollable):
    - **Tire Strategy** — WORKING, `PitStopGantt` Gantt chart with animated playback, driver swap picker, compound-colored bars
-   - **Lap-by-Lap Position** — WORKING, `PositionChart` animated D3 bump chart with play/pause, 5-driver comparison chips, pit stop markers, compound color bands
+   - **Lap-by-Lap Position** — WORKING, `PositionChart` animated D3 bump chart with play/pause, 5-driver comparison chips, pit stop markers, compound color bands. Chart height scales dynamically with number of positions.
    - **Strategic Archetypes** — WORKING, `ParallelCoordinates` parallel coordinates plot of stint strategy (avg lap time, compound, stint length, tire age, grid position) with brush filtering
-   - **Championship Standings** — WORKING, uses `ChampionshipChart` with real data from HF
 
 ---
 
@@ -73,13 +74,15 @@ Three regions:
 │       │
 │       ├── components/
 │       │   ├── WorldMap.jsx         # D3 world map with race pins + zoom/pan
-│       │   │                        #   Props: { races, onRaceClick }
+│       │   │                        #   Country hover highlight, circuit image tooltips
+│       │   ├── SplashScreen.jsx     # Animated intro splash (once per session)
 │       │   ├── SlotDriverPicker.jsx # Shared driver swap dropdown for charts
 │       │   │
 │       │   ├── charts/              # VISUALIZATION COMPONENTS
 │       │   │   ├── ChampionshipChart.jsx  # Recharts cumulative points line chart (clickable legend)
 │       │   │   ├── EraBumpChart.jsx       # Recharts bump chart: end-of-season rank 2000-2024
-│       │   │   │                          #   Driver/constructor toggle, multi-select filter
+│       │   │   │                          #   Driver/constructor toggle, multi-select filter,
+│       │   │   │                          #   season range slider (7 years at a time)
 │       │   │   ├── PositionChart.jsx      # D3 animated position bump chart (5 drivers,
 │       │   │   │                          #   play/pause, compound bands, pit markers)
 │       │   │   │                          #   Self-contained: fetches via getPositionChartData()
