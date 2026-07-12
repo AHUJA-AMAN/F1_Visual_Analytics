@@ -1,4 +1,4 @@
-import { query, queryArrow, registerParquet, registerHttpParquet, unregisterFile } from "./duckdb.js";
+import { query, queryArrow, registerParquet } from "./duckdb.js";
 
 // ============================================================
 // SEASON OVERVIEW PAGE
@@ -412,37 +412,22 @@ export async function getRaceLeaderboard(season, round) {
 const TELEMETRY_BASE =
   "https://huggingface.co/datasets/Aman2406/f1-visual-analytics/resolve/main/data";
 
-let telemetrySourcePromise = null;
-
-async function ensureTelemetryRegistered() {
-  if (telemetrySourcePromise) return telemetrySourcePromise;
-  telemetrySourcePromise = (async () => {
-    for (const url of ["/telemetry.parquet", `${TELEMETRY_BASE}/telemetry.parquet`]) {
-      const ok = await registerHttpParquet("telemetry.parquet", url);
-      if (!ok) continue;
-      try {
-        await queryArrow(`SELECT 1 FROM read_parquet('telemetry.parquet') LIMIT 1`);
-        return true;
-      } catch {
-        await unregisterFile("telemetry.parquet");
-      }
-    }
-    return false;
-  })();
-  return telemetrySourcePromise;
-}
-
 const telemetryCache = new Map();
 
 /**
  * Load per-race telemetry for the animated simulator (2018-2024).
+ * Each race has its own parquet file: telemetry_{raceId}.parquet
  * Returns null when telemetry isn't available for this race.
  */
 export async function getRaceTelemetry(raceId) {
   if (telemetryCache.has(raceId)) return telemetryCache.get(raceId);
 
-  const ready = await ensureTelemetryRegistered();
-  if (!ready) {
+  const fileName = `telemetry_${raceId}.parquet`;
+  const ok = await registerParquet(fileName, [
+    `/${fileName}`,
+    `${TELEMETRY_BASE}/${fileName}`,
+  ]);
+  if (!ok) {
     telemetryCache.set(raceId, null);
     return null;
   }
@@ -451,8 +436,7 @@ export async function getRaceTelemetry(raceId) {
     query(`SELECT DISTINCT driver, team FROM laps WHERE race_id = '${raceId}'`),
     queryArrow(`
       SELECT driver, lap_number, t, x, y, throttle, brake, speed
-      FROM read_parquet('telemetry.parquet')
-      WHERE race_id = '${raceId}'
+      FROM read_parquet('${fileName}')
       ORDER BY driver, lap_number, sample_index
     `),
   ]);
@@ -514,44 +498,43 @@ export async function getRaceTelemetry(raceId) {
   return race;
 }
 
-let outlineTable = null;
+const outlineCache = new Map();
 
 /**
  * Static track outline for a race — the fastest lap's X/Y polyline plus the
  * circuit's rotation. Returns { x, y, rotation } or null.
+ * Each race has its own file: circuits_{raceId}.parquet
  */
 export async function getTrackOutline(raceId) {
-  if (outlineTable === "unavailable") return null;
-  if (!outlineTable) {
-    const ok = await registerParquet("circuits.parquet", [
-      `/circuits.parquet`,
-      `${TELEMETRY_BASE}/circuits.parquet`,
-    ]);
-    if (!ok) {
-      outlineTable = "unavailable";
-      return null;
-    }
-    outlineTable = {};
+  if (outlineCache.has(raceId)) return outlineCache.get(raceId);
+
+  const fileName = `circuits_${raceId}.parquet`;
+  const ok = await registerParquet(fileName, [
+    `/${fileName}`,
+    `${TELEMETRY_BASE}/${fileName}`,
+  ]);
+  if (!ok) {
+    outlineCache.set(raceId, null);
+    return null;
+  }
+
+  try {
     const tbl = await queryArrow(`
-      SELECT race_id, x, y, rotation FROM read_parquet('circuits.parquet')
-      ORDER BY race_id, point_index
+      SELECT x, y, rotation FROM read_parquet('${fileName}')
+      ORDER BY point_index
     `);
-    const rid = tbl.getChild("race_id");
     const x = tbl.getChild("x").toArray();
     const y = tbl.getChild("y").toArray();
     const rot = tbl.getChild("rotation");
-    const nn = tbl.numRows;
-    let s = 0;
-    for (let i = 1; i <= nn; i++) {
-      if (i === nn || rid.get(i) !== rid.get(s)) {
-        outlineTable[rid.get(s)] = {
-          x: x.subarray(s, i),
-          y: y.subarray(s, i),
-          rotation: Number(rot.get(s)) || 0,
-        };
-        s = i;
-      }
-    }
+    const outline = {
+      x,
+      y,
+      rotation: Number(rot.get(0)) || 0,
+    };
+    outlineCache.set(raceId, outline);
+    return outline;
+  } catch {
+    outlineCache.set(raceId, null);
+    return null;
   }
-  return outlineTable[raceId] || null;
 }
