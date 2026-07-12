@@ -432,14 +432,20 @@ export async function getRaceTelemetry(raceId) {
     return null;
   }
 
-  const [teamRows, table] = await Promise.all([
-    query(`SELECT DISTINCT driver, team FROM laps WHERE race_id = '${raceId}'`),
-    queryArrow(`
-      SELECT driver, lap_number, t, x, y, throttle, brake, speed
-      FROM read_parquet('${fileName}')
-      ORDER BY driver, lap_number, sample_index
-    `),
-  ]);
+  let teamRows, table;
+  try {
+    [teamRows, table] = await Promise.all([
+      query(`SELECT DISTINCT driver, team FROM laps WHERE race_id = '${raceId}'`),
+      queryArrow(`
+        SELECT driver, lap_number, t, x, y, throttle, brake, speed
+        FROM read_parquet('${fileName}')
+        ORDER BY driver, lap_number, sample_index
+      `),
+    ]);
+  } catch {
+    telemetryCache.set(raceId, null);
+    return null;
+  }
 
   const n = table.numRows;
   if (n === 0) {

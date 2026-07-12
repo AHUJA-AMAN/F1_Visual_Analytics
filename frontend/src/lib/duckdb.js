@@ -81,6 +81,9 @@ export async function registerParquet(virtualName, urls) {
     try {
       const resp = await fetch(url);
       if (!resp.ok) continue;
+      // Reject HTML responses — SPA rewrites return 200 + text/html for missing files
+      const ct = resp.headers.get("content-type") || "";
+      if (ct.includes("text/html")) continue;
       const buf = new Uint8Array(await resp.arrayBuffer());
       await dbInstance.registerFileBuffer(virtualName, buf);
       registeredFiles.add(virtualName);
