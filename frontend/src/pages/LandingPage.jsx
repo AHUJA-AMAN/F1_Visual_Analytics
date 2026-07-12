@@ -57,11 +57,11 @@ export default function LandingPage() {
   }, [showOverYears]);
 
   function handlePrev() {
-    setWindowStart((s) => Math.max(0, s - 1));
+    setWindowStart((s) => Math.max(0, s - WINDOW_SIZE));
   }
 
   function handleNext() {
-    setWindowStart((s) => Math.min(ALL_YEARS.length - WINDOW_SIZE, s + 1));
+    setWindowStart((s) => Math.min(ALL_YEARS.length - WINDOW_SIZE, s + WINDOW_SIZE));
   }
 
   const handleRaceClick = useCallback((race) => {
@@ -84,7 +84,7 @@ export default function LandingPage() {
       />
 
       {/* Floating year selector + Over the Years button */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-[#121822]/90 backdrop-blur-sm border border-[#26303f] rounded-xl px-4 py-3">
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-white/[0.02] backdrop-blur-md border border-white/20 rounded-xl px-4 py-3 shadow-lg shadow-black/10 ring-1 ring-inset ring-white/10">
         <button
           onClick={handlePrev}
           disabled={windowStart === 0}

@@ -5,14 +5,14 @@
 // Normalized constructor name -> logo filename (in /public/teams-logos).
 // Key = team name lowercased with all non-alphanumerics stripped.
 const TEAM_LOGO_FILES = {
-  ferrari: "ferrari-ges.svg",
+  ferrari: "ferrari-ges.png",
   mclaren: "mclaren.png",
   mercedes: "Mercedes-Logo.svg",
   redbull: "red-bull-logo-2831.png",
   williams: "williams.png",
-  alpine: "alpine-f1-logo.svg",
-  alpinef1team: "alpine-f1-logo.svg",
-  astonmartin: "aston-martin.svg",
+  alpine: "alpine-f1-logo.png",
+  alpinef1team: "alpine-f1-logo.png",
+  astonmartin: "aston-martin.png",
   alfaromeo: "alfaromeo-removebg-preview.png",
   sauber: "Logo_Sauber_F1.png",
   bmwsauber: "Logo_Sauber_F1.png",
@@ -49,6 +49,20 @@ export function getTeamLogo(team) {
   const file = TEAM_LOGO_FILES[normalizeTeam(team)];
   if (!file) return "/f1.svg";
   return "/teams-logos/" + encodeURIComponent(file);
+}
+
+// Per-team display scale — some logos read small at the shared box size.
+const TEAM_LOGO_SCALE = {
+  ferrari: 1.6,
+  redbull: 1.6,
+  mclaren: 1.6,
+  alfaromeo: 1.3,
+  astonmartin: 1.4,
+};
+
+/** Extra zoom factor for a team's logo (1 = no change). */
+export function getTeamLogoScale(team) {
+  return TEAM_LOGO_SCALE[normalizeTeam(team)] || 1;
 }
 
 // Every image file base name available under /headshots and /photos.

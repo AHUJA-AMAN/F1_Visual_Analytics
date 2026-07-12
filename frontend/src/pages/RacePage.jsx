@@ -7,7 +7,7 @@ import ParallelCoordinates from "../components/charts/ParallelCoordinates";
 import RaceSimulator from "../components/simulator/RaceSimulator";
 import LoadingSkeleton from "../components/layout/LoadingSkeleton";
 import FallbackImage from "../components/FallbackImage";
-import { getTeamLogo, getDriverImageCandidates } from "../constants/teamAssets";
+import { getTeamLogo, getTeamLogoScale, getDriverImageCandidates } from "../constants/teamAssets";
 import { TEAM_COLORS } from "../constants/f1Colors";
 import raceData from "../constants/raceLocations.json";
 
@@ -79,6 +79,7 @@ export default function RacePage() {
             const isPodium = entry.position != null && entry.position <= 3;
             const teamColor = TEAM_COLORS[entry.team] || null;
             const teamLogo = getTeamLogo(entry.team);
+            const logoScale = getTeamLogoScale(entry.team);
 
             if (isPodium) {
               return (
@@ -114,6 +115,7 @@ export default function RacePage() {
                         alt={entry.team}
                         onError={(e) => { e.currentTarget.src = "/f1.svg"; }}
                         className="w-4 h-4 object-contain flex-shrink-0"
+                        style={{ transform: `scale(${logoScale})` }}
                       />
                       <span className="text-xs text-gray-500 truncate">{entry.team}</span>
                     </div>
@@ -140,6 +142,7 @@ export default function RacePage() {
                   alt={entry.team}
                   onError={(e) => { e.currentTarget.src = "/f1.svg"; }}
                   className="w-5 h-5 object-contain flex-shrink-0"
+                  style={{ transform: `scale(${logoScale})` }}
                 />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-white truncate">
