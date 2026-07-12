@@ -7,6 +7,9 @@ import ParallelCoordinates from "../components/charts/ParallelCoordinates";
 import RaceSimulator from "../components/simulator/RaceSimulator";
 import TrackView from "../components/simulator/TrackView";
 import LoadingSkeleton from "../components/layout/LoadingSkeleton";
+import FallbackImage from "../components/FallbackImage";
+import { getTeamLogo, getTeamLogoScale, getDriverImageCandidates } from "../constants/teamAssets";
+import { TEAM_COLORS } from "../constants/f1Colors";
 import raceData from "../constants/raceLocations.json";
 
 const TELEMETRY_MIN_YEAR = 2018;
@@ -77,26 +80,85 @@ export default function RacePage() {
           {leaderboardLoading && (
             <div className="text-center text-gray-500 text-sm py-8">Loading results...</div>
           )}
-          {!leaderboardLoading && leaderboard.map((entry, i) => (
-            <div
-              key={i}
-              onClick={() => console.log("Driver clicked:", entry.driver)}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-[#1b2431] transition-colors"
-            >
-              <span className={`w-6 text-center text-sm font-bold ${
-                entry.status === "DNF" ? "text-red-500" : "text-gray-300"
-              }`}>
-                {entry.position ?? "DNF"}
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-white truncate">
-                  {formatDriverName(entry.driver)}
+          {!leaderboardLoading && leaderboard.map((entry, i) => {
+            const isPodium = entry.position != null && entry.position <= 3;
+            const teamColor = TEAM_COLORS[entry.team] || null;
+            const teamLogo = getTeamLogo(entry.team);
+            const logoScale = getTeamLogoScale(entry.team);
+
+            if (isPodium) {
+              return (
+                <div
+                  key={i}
+                  onClick={() => console.log("Driver clicked:", entry.driver)}
+                  className="flex items-center gap-3 px-3 py-4 rounded-lg cursor-pointer hover:bg-[#1b2431] transition-colors"
+                >
+                  <span className="w-6 text-center text-base font-bold text-gray-300 flex-shrink-0">
+                    {entry.position}
+                  </span>
+                  {/* Headshot — full photo, no border, ~3x size */}
+                  <FallbackImage
+                    sources={getDriverImageCandidates(entry.driver)}
+                    alt={formatDriverName(entry.driver)}
+                    className="h-36 w-auto max-w-[120px] object-contain object-top flex-shrink-0"
+                    fallback={
+                      <div className="h-36 w-[90px] flex items-center justify-center text-gray-600 text-3xl flex-shrink-0">
+                        {formatDriverName(entry.driver).charAt(0)}
+                      </div>
+                    }
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className="text-sm font-semibold truncate"
+                      style={{ color: teamColor || "#ffffff" }}
+                    >
+                      {formatDriverName(entry.driver)}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <img
+                        src={teamLogo}
+                        alt={entry.team}
+                        onError={(e) => { e.currentTarget.src = "/f1.svg"; }}
+                        className="w-4 h-4 object-contain flex-shrink-0"
+                        style={{ transform: `scale(${logoScale})` }}
+                      />
+                      <span className="text-xs text-gray-500 truncate">{entry.team}</span>
+                    </div>
+                    <span className="text-xs text-gray-400">{entry.points} pts</span>
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500">{entry.team}</div>
+              );
+            }
+
+            return (
+              <div
+                key={i}
+                onClick={() => console.log("Driver clicked:", entry.driver)}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-[#1b2431] transition-colors"
+              >
+                <span className={`w-6 text-center text-sm font-bold ${
+                  entry.status === "DNF" ? "text-red-500" : "text-gray-300"
+                }`}>
+                  {entry.position ?? "DNF"}
+                </span>
+                {/* Team logo next to name */}
+                <img
+                  src={teamLogo}
+                  alt={entry.team}
+                  onError={(e) => { e.currentTarget.src = "/f1.svg"; }}
+                  className="w-5 h-5 object-contain flex-shrink-0"
+                  style={{ transform: `scale(${logoScale})` }}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-white truncate">
+                    {formatDriverName(entry.driver)}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate">{entry.team}</div>
+                </div>
+                <span className="text-xs text-gray-400 flex-shrink-0">{entry.points} pts</span>
               </div>
-              <span className="text-xs text-gray-400">{entry.points} pts</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </aside>
 
