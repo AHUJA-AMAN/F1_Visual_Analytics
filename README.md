@@ -28,9 +28,11 @@ Open http://localhost:5173 in your browser. That's it — data is fetched from H
 
 Full-screen interactive D3 world map showing race circuit locations as red pins.
 
-- **Year selector** (floating bar at top): Shows 7 years at a time from 2000-2024, arrows to scroll. Clicking a year loads that season's race pins on the map.
-- **Magnifying lens**: Follows cursor, magnifies the area under it (focus+context technique).
+- **Year selector** (fixed floating bar at top): Shows 7 years at a time from 2000-2024, arrows to scroll. Clicking a year loads that season's race pins on the map.
+- **"Over the Years" button**: In the top bar. Opens a full-screen modal popup with placeholder for a cross-season visualization.
+- **Zoom & Pan**: Pinch-to-zoom (trackpad/touch) + scroll wheel zoom. Double-click to re-center on a point.
 - **Race pins**: Hovering shows race name tooltip. Clicking navigates to Page 2.
+- **Championship Progress panel** (fixed, bottom-right): Shows selected year's championship standings placeholder. Expands on hover for better visibility.
 - **Data source**: `src/constants/raceLocations.json` (static, 38 circuits with lat/lng coordinates).
 
 ### Page 2 — `/race/:season/:raceId` — Race Detail
@@ -105,6 +107,8 @@ Three regions:
 ├── pipeline/                        # DATA PIPELINE (Python, run separately, not needed for frontend)
 │   ├── fetch_jolpica.py             # Fetches from Jolpica API (Ergast replacement), 2000-2024
 │   ├── fetch_fastf1.py              # Fetches lap telemetry via FastF1 library, 2018-2024
+│   ├── fetch_telemetry.py           # Fetches race replay data: telemetry (X/Y/speed),
+│   │                                #   track status (SC/VSC), circuit geometry. 2018-2024
 │   └── build_parquets.py            # Cleans and exports final .parquet files
 │
 ├── run_pipeline.py                  # Entry point for full pipeline
@@ -195,14 +199,26 @@ const leaderboard = await getRaceLeaderboard(2023, 1);
 
 3. **Race Simulator** (center of RacePage)
    - Animated replay of all laps using real driver lap times
-   - Data: `getPositionChartData(raceId)` or raw laps data
+   - Data: `telemetry.parquet` (X/Y positions, 100 samples/lap) + `circuits.parquet` (track shape)
+   - Additional context: `track_status.parquet` (safety car / VSC overlays)
    - Play/pause/scrub controls, lap counter
    - This is the main feature of Page 2
+
+4. **Championship Progress visualization** (Page 1, bottom-right panel)
+   - Placeholder already wired in LandingPage.jsx
+   - Receives `selectedYear` as context
+   - Replace the placeholder `<span>` with your chart component
+
+5. **"Over the Years" visualization** (Page 1, modal popup)
+   - Placeholder modal already wired in LandingPage.jsx
+   - Triggered by "Over the Years" button in top bar
+   - Full-screen modal (80vw × 70vh) — replace placeholder with cross-season chart
 
 ### Other tasks
 - Connect Vercel for auto-deploy
 - Leaderboard row click → show driver details (future feature)
 - Add more race info to RacePage header (circuit name, date, country)
+- Upload telemetry.parquet, track_status.parquet, circuits.parquet to HuggingFace
 
 ---
 
@@ -246,6 +262,9 @@ export default function YourChart({ raceId }) {
 | results.parquet | 10,071 | 2000-2024 | Jolpica API | season, round, race_name, circuit_name, country, date, driver, constructor, grid_position, finish_position, points, status, fastest_lap_rank, num_pit_stops, avg_pit_stop_duration_ms |
 | laps.parquet | 161,794 | 2018-2024 | FastF1 | race_id, season, round, driver, team, lap_number, lap_time_seconds, position, compound, tire_age_laps, pit_in_flag, pit_out_flag, gap_to_leader_seconds, sector1_time, sector2_time, sector3_time |
 | stints.parquet | 7,101 | 2018-2024 | Derived | race_id, driver, stint_number, compound, start_lap, end_lap, stint_length |
+| telemetry.parquet | ~20M | 2018-2024 | FastF1 | race_id, driver, lap_number, sample_index, x, y, distance, speed (100 pts/lap) |
+| track_status.parquet | ~3,000 | 2018-2024 | FastF1 | race_id, time_seconds, status_code, status (Green/SafetyCar/VSC/Red) |
+| circuits.parquet | ~30,000 | 2018-2024 | FastF1 | race_id, circuit_name, rotation, point_index, x, y, distance (200 pts/circuit) |
 
 Data URL pattern: `https://huggingface.co/datasets/Aman2406/f1-visual-analytics/resolve/main/data/{filename}.parquet`
 
@@ -284,6 +303,6 @@ Takes ~40 minutes on first run. Subsequent runs use cache and are much faster.
 
 - **Frontend:** React 18, Vite, Tailwind CSS, D3.js, Recharts, Framer Motion, Zustand
 - **Data:** DuckDB-WASM (SQL in browser), Parquet files on HuggingFace
-- **Map:** D3 + TopoJSON (Natural Earth projection)
+- **Map:** D3 + TopoJSON (Natural Earth projection) with pinch-to-zoom and pan
 - **Pipeline:** Python, pandas, FastF1, requests
 - **Deployment:** Vercel (auto-deploys from main branch, root directory: `frontend`)
