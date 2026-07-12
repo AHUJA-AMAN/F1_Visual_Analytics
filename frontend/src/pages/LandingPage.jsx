@@ -1,62 +1,80 @@
-import React from "react";
+import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import WorldMap from "../components/WorldMap";
+import raceData from "../constants/raceLocations.json";
 
-const stats = [
-  { label: "Seasons", value: "25" },
-  { label: "Races", value: "500+" },
-  { label: "Lap Records", value: "161K+" },
-  { label: "Years of Data", value: "2000–2024" },
-];
+const ALL_YEARS = Array.from({ length: 25 }, (_, i) => 2000 + i); // 2000-2024
+const WINDOW_SIZE = 7;
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const [selectedYear, setSelectedYear] = useState(2024);
+  const [windowStart, setWindowStart] = useState(ALL_YEARS.length - WINDOW_SIZE);
+
+  const visibleYears = ALL_YEARS.slice(windowStart, windowStart + WINDOW_SIZE);
+
+  const races = useMemo(() => {
+    return raceData.racesByYear[selectedYear] || [];
+  }, [selectedYear]);
+
+  function handlePrev() {
+    setWindowStart((s) => Math.max(0, s - 1));
+  }
+
+  function handleNext() {
+    setWindowStart((s) => Math.min(ALL_YEARS.length - WINDOW_SIZE, s + 1));
+  }
+
+  function handleRaceClick(race) {
+    navigate(`/race/${selectedYear}/${race.race_id}`);
+  }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center px-6 text-center">
-      <motion.h1
-        initial={{ opacity: 0, y: -30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="text-5xl md:text-7xl font-bold text-white mb-4"
-      >
-        F1 <span className="text-[#e10600]">Visual Analytics</span>
-      </motion.h1>
-
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 }}
-        className="text-gray-400 text-lg mb-12 max-w-xl"
-      >
-        Explore 25 seasons of Formula 1 data — standings, race results,
-        lap-by-lap telemetry, and pit strategy — all queried in your browser.
-      </motion.p>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
-        {stats.map((s, i) => (
-          <motion.div
-            key={s.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 + i * 0.1 }}
-            className="bg-[#111111] rounded-lg p-5 min-w-[120px]"
-          >
-            <div className="text-3xl font-bold text-[#e10600]">{s.value}</div>
-            <div className="text-xs text-gray-400 mt-1 uppercase">{s.label}</div>
-          </motion.div>
-        ))}
+    <div className="relative w-full h-screen bg-[#0a0e14] overflow-hidden">
+      {/* World Map (full background) */}
+      <div className="absolute inset-0">
+        <WorldMap races={races} onRaceClick={handleRaceClick} />
       </div>
 
-      <motion.button
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.8 }}
-        onClick={() => navigate("/season")}
-        className="bg-[#e10600] text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-[#b30500] transition-colors cursor-pointer"
-      >
-        Enter Dashboard
-      </motion.button>
+      {/* Floating year selector */}
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-[#121822]/90 backdrop-blur-sm border border-[#26303f] rounded-xl px-4 py-3">
+        <button
+          onClick={handlePrev}
+          disabled={windowStart === 0}
+          className="text-white/70 hover:text-white disabled:opacity-30 px-2 py-1 text-lg cursor-pointer disabled:cursor-default"
+        >
+          ←
+        </button>
+
+        <div className="flex gap-1">
+          {visibleYears.map((year) => (
+            <button
+              key={year}
+              onClick={() => setSelectedYear(year)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                year === selectedYear
+                  ? "bg-[#e10600] text-white"
+                  : "text-gray-400 hover:text-white hover:bg-[#1b2431]"
+              }`}
+            >
+              {year}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={handleNext}
+          disabled={windowStart >= ALL_YEARS.length - WINDOW_SIZE}
+          className="text-white/70 hover:text-white disabled:opacity-30 px-2 py-1 text-lg cursor-pointer disabled:cursor-default"
+        >
+          →
+        </button>
+      </div>
+
+      {/* Hint text */}
+      <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-gray-500 text-sm z-10">
+        Select a season, then click a race pin to dive in.
+      </p>
     </div>
   );
 }

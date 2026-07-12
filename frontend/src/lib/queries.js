@@ -313,3 +313,24 @@ export async function getTeamList(season) {
     ORDER BY constructor
   `);
 }
+
+/**
+ * Race leaderboard — full classification for a specific race.
+ * Returns: [{ position, driver, team, points, status }, ...]
+ * Sorted by finish position (DNFs at the bottom).
+ */
+export async function getRaceLeaderboard(season, round) {
+  return query(`
+    SELECT
+      finish_position AS position,
+      driver,
+      constructor AS team,
+      points,
+      status
+    FROM results
+    WHERE season = ${season} AND round = ${round}
+    ORDER BY
+      CASE WHEN finish_position IS NULL THEN 1 ELSE 0 END,
+      finish_position
+  `);
+}
