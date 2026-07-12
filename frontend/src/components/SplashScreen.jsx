@@ -7,46 +7,68 @@ const FADE_OUT_MS = 600;
 export default function SplashScreen({ onDone }) {
   const [phase, setPhase] = useState("enter"); // enter | zoom | done
 
-  // Keep onDone in a ref so the effect never needs it as a dep
   const onDoneRef = useRef(onDone);
   useLayoutEffect(() => { onDoneRef.current = onDone; });
 
-  // Run once on mount — no deps so LandingPage re-renders can't restart it
   useEffect(() => {
-    const audio = new Audio("/introsound.mp3");
-    audio.volume = 1;
+    let cancelled = false;
+    let gainNode = null;
+    let audioCtx = null;
+    let source = null;
 
-    const tryPlay = () => {
-      audio.currentTime = AUDIO_START_S;
-      return audio.play().catch(() => {});
-    };
+    async function playAudio() {
+      try {
+        // Web Audio API has better autoplay support than HTMLAudioElement
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    // Attempt immediate autoplay; if blocked, play on first user gesture
-    tryPlay().then((result) => {
-      if (result === undefined) {
-        // play() was blocked (returns undefined when NotAllowedError is caught)
-        const unlock = () => {
-          tryPlay();
-          document.removeEventListener("click", unlock, true);
-          document.removeEventListener("keydown", unlock, true);
-        };
-        document.addEventListener("click", unlock, true);
-        document.addEventListener("keydown", unlock, true);
+        // If context is suspended (autoplay blocked), try to resume
+        if (audioCtx.state === "suspended") {
+          await audioCtx.resume().catch(() => {});
+        }
+
+        const resp = await fetch("/introsound.mp3");
+        const buf = await resp.arrayBuffer();
+        if (cancelled) return;
+
+        const decoded = await audioCtx.decodeAudioData(buf);
+        if (cancelled) return;
+
+        gainNode = audioCtx.createGain();
+        gainNode.gain.value = 1;
+        gainNode.connect(audioCtx.destination);
+
+        source = audioCtx.createBufferSource();
+        source.buffer = decoded;
+        source.connect(gainNode);
+        source.start(0, AUDIO_START_S);
+
+        // Schedule volume fade
+        const fadeStart = audioCtx.currentTime + (TOTAL_MS - FADE_OUT_MS) / 1000;
+        const fadeEnd = fadeStart + FADE_OUT_MS / 1000;
+        gainNode.gain.setValueAtTime(1, fadeStart);
+        gainNode.gain.linearRampToValueAtTime(0, fadeEnd);
+      } catch {
+        // Audio failed — splash still plays visually
+      }
+    }
+
+    // If AudioContext is blocked, unlock on first gesture
+    function unlockAndPlay() {
+      playAudio();
+      document.removeEventListener("click", unlockAndPlay, true);
+      document.removeEventListener("keydown", unlockAndPlay, true);
+      document.removeEventListener("touchstart", unlockAndPlay, true);
+    }
+
+    // Try to play immediately
+    playAudio().then(() => {
+      if (audioCtx && audioCtx.state === "suspended") {
+        // Still blocked — wait for user gesture
+        document.addEventListener("click", unlockAndPlay, true);
+        document.addEventListener("keydown", unlockAndPlay, true);
+        document.addEventListener("touchstart", unlockAndPlay, true);
       }
     });
-
-    // Fade volume from 1 → 0 over FADE_OUT_MS before the transition ends
-    const fadeSteps = 20;
-    const fadeInterval = FADE_OUT_MS / fadeSteps;
-    let ticker = null;
-    const fadeTimer = setTimeout(() => {
-      let step = 0;
-      ticker = setInterval(() => {
-        step++;
-        audio.volume = Math.max(0, 1 - step / fadeSteps);
-        if (step >= fadeSteps) clearInterval(ticker);
-      }, fadeInterval);
-    }, TOTAL_MS - FADE_OUT_MS);
 
     const t1 = setTimeout(() => setPhase("zoom"), 700);
     const t2 = setTimeout(() => {
@@ -55,12 +77,14 @@ export default function SplashScreen({ onDone }) {
     }, TOTAL_MS);
 
     return () => {
+      cancelled = true;
       clearTimeout(t1);
       clearTimeout(t2);
-      clearTimeout(fadeTimer);
-      if (ticker) clearInterval(ticker);
-      audio.pause();
-      audio.src = "";
+      document.removeEventListener("click", unlockAndPlay, true);
+      document.removeEventListener("keydown", unlockAndPlay, true);
+      document.removeEventListener("touchstart", unlockAndPlay, true);
+      if (source) try { source.stop(); } catch {}
+      if (audioCtx) audioCtx.close().catch(() => {});
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -76,7 +100,7 @@ export default function SplashScreen({ onDone }) {
         }
         @keyframes f1-zoom {
           0%   { transform: translate(-50%, -50%) scale(1);   opacity: 1; }
-          100% { transform: translate(-50%, -50%) scale(90);  opacity: 0; }
+          100% { transform: translate(-50%, -50%) scale(30);  opacity: 0; }
         }
         @keyframes overlay-fade {
           0%   { opacity: 1; }
@@ -98,9 +122,9 @@ export default function SplashScreen({ onDone }) {
         }}
       />
 
-      <svg
-        viewBox="0 0 24 24"
-        xmlns="http://www.w3.org/2000/svg"
+      <img
+        src="/f1.svg"
+        alt="F1"
         style={{
           position: "fixed",
           top: "50%",
@@ -108,16 +132,14 @@ export default function SplashScreen({ onDone }) {
           width: "220px",
           height: "220px",
           zIndex: 10000,
-          fill: "#E10600",
           filter: "drop-shadow(0 0 40px rgba(225,6,0,0.6))",
+          willChange: "transform, opacity",
           animation: phase === "enter"
             ? "f1-enter 0.65s cubic-bezier(0.22,1,0.36,1) forwards"
             : `f1-zoom ${TOTAL_MS - 700}ms cubic-bezier(0.55,0,1,0.45) forwards`,
           pointerEvents: "none",
         }}
-      >
-        <path d="M9.6 11.24h7.91L19.75 9H9.39c-2.85 0-3.62.34-5.17 1.81C2.71 12.3 0 15 0 15h3.38c.77-.75 2.2-2.13 2.85-2.75.92-.87 1.37-1.01 3.37-1.01zM20.39 9l-6 6H18l6-6h-3.61zm-3.25 2.61H9.88c-2.22 0-2.6.12-3.55 1.07C5.44 13.57 4 15 4 15h3.15l.75-.75c.49-.49.75-.55 1.78-.55h5.37l2.09-2.09z" />
-      </svg>
+      />
     </>
   );
 }
