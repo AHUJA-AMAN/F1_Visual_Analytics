@@ -65,13 +65,25 @@ export default function PitStopGantt({ raceId }) {
     if (!data || data.length === 0) {
       return { allDrivers: [], minLap: 0, maxLap: 0, xScale: d3.scaleLinear(), innerWidth: 0 };
     }
-    const driverList = Array.from(new Set(data.map((d) => d.driver))).sort();
+    const driverList = Array.from(new Set(data.map((d) => d.driver)));
     const lapMin = d3.min(data, (d) => d.start_lap);
     const lapMax = d3.max(data, (d) => d.end_lap);
+    // Sort by final race position (last lap with position data)
+    driverList.sort((a, b) => {
+      const getFinishPos = (driver) => {
+        const positions = positionByDriverLap[driver];
+        if (!positions) return 999;
+        for (let l = lapMax; l >= lapMin; l--) {
+          if (positions[l] != null) return positions[l];
+        }
+        return 999;
+      };
+      return getFinishPos(a) - getFinishPos(b);
+    });
     const iW = width - margin.left - margin.right;
     const xS = d3.scaleLinear().domain([lapMin, lapMax]).range([0, iW]);
     return { allDrivers: driverList, minLap: lapMin, maxLap: lapMax, xScale: xS, innerWidth: iW };
-  }, [data, width]);
+  }, [data, width, positionByDriverLap]);
 
   const driverMeta = useMemo(() => {
     const map = {};
@@ -82,19 +94,12 @@ export default function PitStopGantt({ raceId }) {
   const innerHeight = slots.length * rowHeight;
   const height = innerHeight + margin.top + margin.bottom;
 
-  // Reset slots on new data — initial order by first-lap position
+  // Reset slots on new data — pick top finishers by default
   useEffect(() => {
-    if (!data || data.length === 0) { setSlots([]); return; }
-    const driverList = Array.from(new Set(data.map((d) => d.driver))).sort();
-    // Sort by position at lap 1 if available
-    driverList.sort((a, b) => {
-      const posA = positionByDriverLap[a]?.[1] ?? 999;
-      const posB = positionByDriverLap[b]?.[1] ?? 999;
-      return posA - posB;
-    });
-    setSlots(driverList.slice(0, SLOT_COUNT));
+    if (!allDrivers || allDrivers.length === 0) { setSlots([]); return; }
+    setSlots(allDrivers.slice(0, SLOT_COUNT));
     setPicker(null);
-  }, [data, positionByDriverLap]);
+  }, [allDrivers]);
 
   useEffect(() => {
     setCurrentLap(maxLap || null);
@@ -280,19 +285,37 @@ export default function PitStopGantt({ raceId }) {
                     const color = tireColor(stint.compound);
                     const isHovered = hovered?.stint === stint;
 
+                    // Compute stint % of race completed so far for this driver
+                    const lapsOnThisStint = Math.max(0, Math.min(visibleLap, stint.end_lap) - stint.start_lap + 1);
+                    const stintActive = visibleLap >= stint.start_lap;
+                    const totalLapsCompleted = Math.max(1, visibleLap - stints[0].start_lap + 1);
+                    const pct = stintActive ? Math.round((lapsOnThisStint / totalLapsCompleted) * 100) : 0;
+                    const showPct = stintActive && barW > 28;
+
                     return (
-                      <rect
-                        key={stint.stint_number}
-                        x={barX} y={6} width={barW} height={rowHeight - 12} rx={3}
-                        fill={color}
-                        stroke={isHovered ? "#ffffff" : "rgba(0,0,0,0.35)"}
-                        strokeWidth={isHovered ? 1.5 : 1}
-                        opacity={hovered && !isHovered ? 0.55 : 1}
-                        style={{ cursor: "pointer", transition: "opacity 120ms ease" }}
-                        onMouseEnter={(e) => handleEnter(stint, e)}
-                        onMouseMove={handleMove}
-                        onMouseLeave={handleLeave}
-                      />
+                      <g key={stint.stint_number}>
+                        <rect
+                          x={barX} y={6} width={barW} height={rowHeight - 12} rx={3}
+                          fill={color}
+                          stroke={isHovered ? "#ffffff" : "rgba(0,0,0,0.35)"}
+                          strokeWidth={isHovered ? 1.5 : 1}
+                          opacity={hovered && !isHovered ? 0.55 : 1}
+                          style={{ cursor: "pointer", transition: "opacity 120ms ease" }}
+                          onMouseEnter={(e) => handleEnter(stint, e)}
+                          onMouseMove={handleMove}
+                          onMouseLeave={handleLeave}
+                        />
+                        {showPct && (
+                          <text
+                            x={barX + barW / 2} y={rowHeight / 2} dy="0.35em"
+                            textAnchor="middle" fontSize={9} fontWeight={700}
+                            fill="#000000" fillOpacity={0.7}
+                            style={{ pointerEvents: "none" }}
+                          >
+                            {pct}%
+                          </text>
+                        )}
+                      </g>
                     );
                   })}
                 </g>

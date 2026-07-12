@@ -42,12 +42,22 @@ export default function PositionChart({ raceId }) {
 
   const allDrivers = useMemo(() => {
     const meta = new Map();
+    const bestPos = new Map();
     data.forEach((d) => {
       if (!meta.has(d.driver)) meta.set(d.driver, d.team);
+      // Track best (lowest) position per driver across all laps
+      const prev = bestPos.get(d.driver) ?? 999;
+      if (d.position < prev) bestPos.set(d.driver, d.position);
+    });
+    // Find last lap to get final race positions
+    const maxLapNum = Math.max(...data.map((d) => d.lap));
+    const finalPos = new Map();
+    data.forEach((d) => {
+      if (d.lap === maxLapNum) finalPos.set(d.driver, d.position);
     });
     return Array.from(meta.entries())
       .map(([driver, team]) => ({ driver, team }))
-      .sort((a, b) => a.driver.localeCompare(b.driver));
+      .sort((a, b) => (finalPos.get(a.driver) ?? 999) - (finalPos.get(b.driver) ?? 999));
   }, [data]);
 
   const { maxLap, maxPosition } = useMemo(() => {

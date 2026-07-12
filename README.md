@@ -34,14 +34,14 @@ Full-screen interactive D3 world map showing race circuit locations as red pins.
 - **Country hover effect**: Countries highlight with a warm crimson tint + red border on hover, matching the F1 theme.
 - **Race pins**: Hovering shows circuit outline image + race name tooltip. Clicking navigates to Page 2.
 - **Splash screen**: Animated intro on first visit (once per session).
-- **Championship Progress panel** (fixed, bottom-right): Shows a collapsed title card by default. On hover, expands to reveal the full `ChampionshipChart` showing top 7 drivers by final points with cumulative points across rounds. Click any driver chip to swap via dropdown picker (same pattern as Tire Strategy). Data fetched via `getChampionshipStandings(season)`.
+- **Championship Progress panel** (fixed, bottom-left): Shows a collapsed title card by default. On hover, expands to reveal the full `ChampionshipChart` showing top 7 drivers by final points with cumulative points across rounds. Click any driver chip to swap via dropdown picker (same pattern as Tire Strategy). Data fetched via `getChampionshipStandings(season)`.
 - **Data source**: `src/constants/raceLocations.json` (static, 38 circuits with lat/lng coordinates).
 
 ### Page 2 — `/race/:season/:raceId` — Race Detail
 
 Three regions:
 
-1. **Left Panel (Leaderboard)**: Full race classification — position, driver name, team, points, DNF status. Every row is clickable (scaffolded for future driver-detail feature, currently console.log only). Data fetched live via `getRaceLeaderboard()`.
+1. **Left Panel (Leaderboard)**: Full race classification — position, driver name, team, points, DNF status. Podium finishers (P1-P3) shown with full driver headshot photos and team-colored names. Team logos displayed alongside each entry. Every row is clickable (scaffolded for future driver-detail feature, currently console.log only). Data fetched live via `getRaceLeaderboard()`.
 
 2. **Center (Race Simulator)**: Canvas-based animated race replay using real telemetry data (2018-2024). Features:
    - Track outline rendered from circuit geometry with proper rotation
@@ -50,12 +50,14 @@ Three regions:
    - Click any driver (in standings or on track) to focus — dims others, shows telemetry chart
    - Live standings sidebar updates in real-time during playback
    - Throttle & brake trace chart for focused driver (scrolling canvas)
+   - **Multi-driver comparison panel**: Click "Compare" on any driver to open a floating overlay with Pace Chart, Dynamics Charts, and Metric Scatter tabs for head-to-head analysis
    - Auto-plays on load. Shows "Replay unavailable" for races without telemetry data
+   - **Pre-2018 races**: Shows a static `TrackView` component (track outline preview) instead of live simulator
    - Data: `telemetry.parquet` (X/Y/speed/throttle/brake, 100 samples/lap) + `circuits.parquet` (track shape)
 
 3. **Bottom (Toggle Panels)**: Three buttons — only one panel open at a time (full-height, scrollable):
-   - **Tire Strategy** — WORKING, `PitStopGantt` Gantt chart with animated playback, driver swap picker, compound-colored bars
-   - **Lap-by-Lap Position** — WORKING, `PositionChart` animated D3 bump chart with play/pause, 5-driver comparison chips, pit stop markers, compound color bands. Chart height scales dynamically with number of positions.
+   - **Tire Strategy** — WORKING, `PitStopGantt` Gantt chart with animated playback, driver swap picker, compound-colored bars, evolving tire percentage labels on each stint bar showing share of race completed. Default drivers are top finishers. Percentages persist at end of race until replay.
+   - **Lap-by-Lap Position** — WORKING, `PositionChart` animated D3 bump chart with play/pause, 5-driver comparison chips, pit stop markers, compound color bands. Chart height scales dynamically with number of positions. Default drivers are top 5 finishers (sorted by final race position).
    - **Strategic Archetypes** — WORKING, `ParallelCoordinates` parallel coordinates plot of stint strategy (avg lap time, compound, stint length, tire age, grid position) with brush filtering
 
 ---
@@ -106,12 +108,22 @@ Three regions:
 │       │   │
 │       │   ├── simulator/           # RACE SIMULATOR
 │       │   │   ├── RaceSimulator.jsx    # Canvas-based animated race replay (20 drivers,
-│       │   │   │                        #   track + cars, live standings, focus mode)
+│       │   │   │                        #   track + cars, live standings, focus mode, compare)
 │       │   │   │                        #   Self-contained: fetches via getRaceTelemetry()
 │       │   │   ├── TelemetryChart.jsx   # Scrolling throttle/brake canvas trace for
 │       │   │   │                        #   focused driver (synced to sim clock via ref)
-│       │   │   └── raceEngine.js        # Pure math: interpolation, standings, projection.
-│       │   │                            #   No React — used by RaceSimulator + TelemetryChart
+│       │   │   ├── TrackView.jsx        # Static track outline for pre-2018 races
+│       │   │   ├── raceEngine.js        # Pure math: interpolation, standings, projection.
+│       │   │   │                        #   No React — used by RaceSimulator + TelemetryChart
+│       │   │   └── comparison/          # Multi-driver comparison overlay
+│       │   │       ├── ComparisonPanel.jsx   # Floating panel with tabs
+│       │   │       ├── PaceChart.jsx         # Lap time comparison chart
+│       │   │       ├── DynamicsCharts.jsx    # Speed/throttle/brake dynamics
+│       │   │       ├── MetricScatter.jsx     # Performance metric scatter plot
+│       │   │       ├── CompareTooltip.jsx    # Shared tooltip component
+│       │   │       └── comparisonData.js     # Data fetching helpers
+│       │   │
+│       │   ├── FallbackImage.jsx    # <img> with multiple source fallbacks on error
 │       │   │
 │       │   └── layout/              # SHARED UI COMPONENTS
 │       │       ├── Navbar.jsx           # Top nav (currently unused in 2-page layout)
@@ -132,6 +144,9 @@ Three regions:
 │           ├── f1Colors.js          # Team color hex codes (Red Bull #3671C6, etc.)
 │           │                        #   + compound colors (SOFT #E8002D, etc.)
 │           │                        #   Exports: TEAM_COLORS, COMPOUND_COLORS, getTeamColor()
+│           ├── teamAssets.js        # Team logo paths + driver headshot filename mappings
+│           │                        #   Exports: getTeamLogo(), getTeamLogoScale(),
+│           │                        #   getDriverImageCandidates()
 │           └── raceLocations.json   # Static JSON: 38 circuits with lat/lng + races per
 │                                    #   year (2000-2024). Used by WorldMap to place pins.
 │
